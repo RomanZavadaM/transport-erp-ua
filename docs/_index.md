@@ -7,6 +7,8 @@
 - [PROJECT_STATE](../PROJECT_STATE.md)
 - [ARCHITECTURE_VERSION](../ARCHITECTURE_VERSION.md)
 - [ADR-0007 — Local Desktop / SQLite / Central Transfer](01-Architecture/ADR/ADR-0007-Local-SQLite-and-Central-Transfer.md)
+- [Local Desktop Application — practical profile](07-Operations/Local-Desktop-Application.md)
+- [Local SQLite Foundation — M1.5](02-Data/schema/10-Local-SQLite-Foundation.md)
 - [Огляд архітектури](01-Architecture/Architecture-Overview.md)
 - [Модель БД Local SQLite + Central PostgreSQL](02-Data/Database-Model.md)
 - [Deployment profiles](07-Operations/Deployment.md)
@@ -36,10 +38,11 @@
 - [SQLite/PostgreSQL integrity rules](02-Data/schema/07-RLS-Immutability-Indexes.md)
 - [Foreign Keys & Delete Policy](02-Data/schema/08-Foreign-Keys-and-Delete-Policy.md)
 - [Migration Readiness](02-Data/schema/09-Migration-Readiness.md)
+- [Local SQLite Foundation — M1.5](02-Data/schema/10-Local-SQLite-Foundation.md)
 - [Table Catalog](02-Data/schema/Table-Catalog.md)
 - [ERD v1](02-Data/schema/ERD-v1.md)
 
-> Detailed schema files 01–05 походять з PostgreSQL-oriented v1.5 physical design і в v1.6 трактуються як доменно-структурна база, яку M1.5 адаптує до SQLite local profile. PostgreSQL-specific DDL не є local requirement.
+> Detailed schema files 01–05 походять з PostgreSQL-oriented v1.5 physical design і в v1.6 трактуються як доменно-структурна база, яку M1.5+ адаптує до SQLite local profile. PostgreSQL-specific DDL не є local requirement.
 
 ## 03 — API
 - [OpenAPI MVP Contract](03-API/OpenAPI-MVP-Contract.md)
@@ -64,6 +67,7 @@
 - [Test Strategy](06-Testing/Test-Strategy.md)
 
 ## 07 — Експлуатація
+- [Local Desktop Application](07-Operations/Local-Desktop-Application.md)
 - [Deployment](07-Operations/Deployment.md)
 - [Backup / DR](07-Operations/Backup-and-DR.md)
 - [Observability](07-Operations/Observability.md)
