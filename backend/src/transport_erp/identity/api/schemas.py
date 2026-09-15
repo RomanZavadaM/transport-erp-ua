@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field, SecretStr
 
 LocaleCode = Literal["uk", "en", "es", "fr", "de"]
+PasswordValue = Annotated[SecretStr, Field(min_length=12, max_length=256)]
 
 
 class ResponseMeta(BaseModel):
@@ -15,7 +16,7 @@ class ResponseMeta(BaseModel):
 class LoginRequest(BaseModel):
     company_edrpou: str = Field(min_length=8, max_length=10, pattern=r"^\d{8,10}$")
     username: str = Field(min_length=1, max_length=100)
-    password: SecretStr
+    password: PasswordValue
 
 
 class UserView(BaseModel):
@@ -45,7 +46,7 @@ class PermissionsResponse(BaseModel):
 class UserCreateRequest(BaseModel):
     username: str = Field(min_length=1, max_length=100)
     email: str | None = Field(default=None, max_length=320)
-    password: SecretStr
+    password: PasswordValue
     preferred_locale: LocaleCode | None = None
 
 
