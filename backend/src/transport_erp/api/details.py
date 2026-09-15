@@ -120,7 +120,12 @@ def _company_id(connection: sqlite3.Connection) -> str:
     return str(row["value"])
 
 
-def _documents(connection: sqlite3.Connection, table: str, owner_field: str, owner_id: str) -> list[DocumentResponse]:
+def _documents(
+    connection: sqlite3.Connection,
+    table: str,
+    owner_field: str,
+    owner_id: str,
+) -> list[DocumentResponse]:
     rows = connection.execute(
         f"""
         SELECT id, document_type, number, valid_until, note
