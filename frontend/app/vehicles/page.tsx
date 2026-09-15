@@ -254,9 +254,14 @@ export default function VehiclesPage() {
                     <td>{vehicle.year ?? "—"}</td>
                     <td>{statusLabels[vehicle.lifecycle_status]}</td>
                     <td>
-                      <button className="button secondary" onClick={() => edit(vehicle)} type="button">
-                        Редагувати
-                      </button>
+                      <div className="page-toolbar-actions">
+                        <Link className="button secondary" href={`/vehicle-card/?id=${vehicle.id}`}>
+                          Картка
+                        </Link>
+                        <button className="button secondary" onClick={() => edit(vehicle)} type="button">
+                          Редагувати
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
