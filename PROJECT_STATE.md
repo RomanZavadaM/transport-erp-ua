@@ -3,7 +3,7 @@
 ## Поточний baseline
 
 Версія: **architecture-v1.5**  
-Статус: **M0 Architecture Freeze — accepted candidate, pending merge/tag**  
+Статус: **M0 Architecture Freeze — FROZEN**  
 Канонічна мова: **українська (`uk`)**; підтримувані переклади: `en`, `es`, `fr`, `de`.
 
 ## Frozen core decisions
@@ -36,7 +36,7 @@
 
 ## Final cross-document corrections
 
-Physical schema/API вже синхронізовані з review:
+Physical schema/API синхронізовані з review:
 
 - medical result set: `FIT | UNFIT`;
 - separate `DRIVER_TECHNICAL_PREDEPARTURE` evidence;
@@ -83,7 +83,7 @@ Deferred work не може змінювати frozen M0 invariants без ADR +
 
 ## M1 — наступний milestone
 
-Після merge/tag `architecture-v1.5` порядок старту:
+Після merge цього freeze baseline і створення tag `architecture-v1.5` порядок старту:
 
 1. application repository skeleton;
 2. CI quality gates;
