@@ -9,6 +9,7 @@
 - [ADR-0007 — Local Desktop / SQLite / Central Transfer](01-Architecture/ADR/ADR-0007-Local-SQLite-and-Central-Transfer.md)
 - [Local Desktop Application — practical profile](07-Operations/Local-Desktop-Application.md)
 - [Local SQLite Foundation — M1.5](02-Data/schema/10-Local-SQLite-Foundation.md)
+- [Local Desktop UX — transfer/backup/system state](04-UX/Local-Desktop-Operations.md)
 - [Огляд архітектури](01-Architecture/Architecture-Overview.md)
 - [Модель БД Local SQLite + Central PostgreSQL](02-Data/Database-Model.md)
 - [Deployment profiles](07-Operations/Deployment.md)
@@ -54,6 +55,7 @@
 - [Transaction Boundaries + Transfer flow](03-API/Transaction-Boundaries.md)
 
 ## 04 — UX
+- [Local Desktop Operations](04-UX/Local-Desktop-Operations.md)
 - [Ролі та робочі простори](04-UX/Roles-and-Workspaces.md)
 - [Dispatcher Board](04-UX/Dispatcher-Board.md)
 - [Release Workspace](04-UX/Release-Workspace.md)
