@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from psycopg import Connection
-
 import pytest
+from psycopg import Connection
 
 pytestmark = pytest.mark.postgres
 
