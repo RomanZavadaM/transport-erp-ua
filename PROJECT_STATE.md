@@ -6,7 +6,7 @@
 Статус архітектури: **M0 Architecture Freeze — FROZEN**  
 Канонічна мова: **українська (`uk`)**; переклади: `en`, `es`, `fr`, `de`.
 
-Поточний етап реалізації: **M1.4 — Identity and access foundation**.
+Поточний етап реалізації: **M1.5 — Audit / Outbox / Observability foundation**.
 
 ## Frozen core decisions
 
@@ -24,9 +24,9 @@
 - Tenant isolation + RLS — частина physical design.
 - Transactional outbox та integrity checker закладені в core.
 
-## M0 завершено
+## M0 — DONE
 
-MVP, API contract, PostgreSQL physical design, UX, RBAC policy, i18n, testing/traceability, operations/DR та regulatory review завершені й frozen у architecture-v1.5.
+MVP, API contract, PostgreSQL physical design, UX, RBAC policy, i18n, testing/traceability, operations/DR та regulatory review завершені й frozen у `architecture-v1.5`.
 
 ## M1 — стан реалізації
 
@@ -44,79 +44,75 @@ Merged to `main` as:
 
 `d64c765b9ed6ee7acdf1add12fbf4ae26edeeba8`
 
-CI lifecycle verified:
+Verified lifecycle:
 
 `upgrade head → 12 PostgreSQL acceptance tests → downgrade base → upgrade head → schema verification`
 
 Issue #18 closed.
 
-## M1.4 — Identity and access foundation — ACTIVE, IMPLEMENTED IN PR
+### M1.4 Identity and access foundation — DONE
 
-GitHub Issue: **#19**  
-Working branch: **`feature/m1.4-identity-access`**  
-Draft PR: **#24**.
+PR **#24** squash-merged to `main` as:
 
-### Durable implementation checkpoints
+`7d17edf737cc344037bed3ee4ade6ecbb689b2cc`
 
-- `e627bb886521cffd2b2aee9323d0e4a71fc29a85` — identity domain/application/persistence foundation + migration #2;
-- `2e8a0f75f928023adf4c8da058956e9eac2dd9d6` — cookie session auth, RBAC HTTP API, CSRF middleware;
-- `0f8add2285f1d594c2b666b03c430e8d97dd42ce` — identity security and PostgreSQL acceptance tests;
-- `90729275c3dbdf64d99c699633d4cd3dfc0779e0` — CI diagnostics fixes + safe client IP normalization;
-- `fadfd0e0f592dea3026ab0a4b636a7400f2305c1` — strict mypy test fix;
-- `8d98514da20622dc3b9884054971e9de95d97373` — OpenAPI overlay synchronized with identity/session API;
-- `12213baa2e2c4c7e7582142e3e95683bdc531b2b` — CI-generated consolidated OpenAPI contract.
+Issue: **#19**.
 
-### Implemented in M1.4
+Implemented:
 
 - bounded context `identity/domain/application/infrastructure/api`;
 - SQLAlchemy session factory and transaction-local tenant context via `SET LOCAL app.company_id`;
 - Argon2id password hashing;
-- opaque cryptographically-random session tokens;
+- opaque cryptographically-random browser session tokens;
 - only SHA-256 session-token hash stored in PostgreSQL;
-- HttpOnly browser session cookie;
-- double-submit CSRF protection bound to current session;
+- HttpOnly session cookie;
+- session-bound double-submit CSRF protection;
 - production guard requiring secure cookies;
-- session login/rotation/revocation;
-- user status handling `ACTIVE/SUSPENDED/DISABLED`;
-- permission-based authorization, not hardcoded role names;
+- login/session rotation/logout and revocation;
+- user statuses `ACTIVE/SUSPENDED/DISABLED`;
+- permission-based RBAC instead of hardcoded role-name authorization;
 - effective permission resolution;
-- users/roles/permissions management foundation;
+- users/roles/permission-catalog management foundation;
 - reusable FastAPI `require_permission(...)` dependency;
-- request-id and stable API error envelope;
-- `/api/v1/auth/login`, `/auth/refresh`, `/auth/logout`, `/auth/me`, `/auth/permissions`;
-- `/api/v1/users` create/list/get/patch/status/roles foundation;
-- `/api/v1/roles` and `/api/v1/permissions` foundation;
-- migration #2 with complete frozen permission catalog seed;
-- system `ADMIN` template role with identity/settings/audit permissions only;
-- ADMIN does **not** implicitly receive release/medical/technical permissions;
-- narrow PostgreSQL `SECURITY DEFINER` company bootstrap resolver for login;
+- stable API error envelope and request-id;
+- auth endpoints: login/refresh/logout/me/permissions;
+- user create/list/get/patch/status/roles foundation;
+- role create/list and permission catalog API;
+- Alembic migration #2;
+- full frozen permission catalog seed;
+- global `ADMIN` template role;
+- ADMIN has identity/settings/audit administration permissions but does **not** implicitly receive release/medical/technical business permissions;
+- narrow PostgreSQL `SECURITY DEFINER` company resolver for login bootstrap under RLS;
 - DB trigger rejecting cross-tenant role assignment;
 - identity unit tests and real PostgreSQL/API acceptance tests;
-- OpenAPI overlay now describes cookie auth, CSRF, users/roles endpoints and identity DTOs.
+- OpenAPI contract updated for cookie session, CSRF and identity endpoints.
 
-### CI findings already resolved
+Final M1.4 CI was fully green:
 
-- Ruff import/encoding diagnostics resolved without weakening Ruff rules;
-- TestClient peer name `testclient` is not forced into PostgreSQL `inet`; application stores peer IP only when syntactically valid;
-- strict mypy complaint over psycopg `object` result fixed with explicit typed cast;
-- migration #2 already succeeded on clean PostgreSQL in CI;
-- OpenAPI overlay validates and consolidated contract has been regenerated.
+- Backend: Ruff + strict mypy + pytest;
+- PostgreSQL: clean upgrade + acceptance tests + downgrade + re-upgrade + schema verification;
+- OpenAPI: generation + validation + freshness;
+- Frontend: ESLint + TypeScript + production build;
+- Compose validation.
 
-### Remaining before M1.4 merge
+## M1.5 — NEXT / ACTIVE
 
-1. run full CI on a normal commit after generated OpenAPI sync;
-2. require green Backend quality, PostgreSQL lifecycle, OpenAPI, Frontend and Compose jobs;
-3. if needed, fix only concrete CI findings without relaxing quality gates;
-4. self-review PR #24 diff;
-5. mark PR ready and squash-merge;
-6. verify Issue #19 closes;
-7. update `main/PROJECT_STATE.md` with final M1.4 merge SHA.
+GitHub Issue: **#20 — audit/outbox/observability foundation**.
 
-## Next after M1.4
+Planned order:
 
-**M1.5 — audit/outbox/observability foundation (Issue #20).**
+1. append-only audit application service and writer;
+2. transactional audit recording integrated with application transactions;
+3. transactional outbox writer and event envelope;
+4. worker-safe outbox claim/publish state using PostgreSQL locking semantics;
+5. structured request/application logging with correlation/request IDs;
+6. readiness endpoint with database dependency check;
+7. metrics/health foundation without leaking sensitive payloads;
+8. integrity-check runner foundation;
+9. PostgreSQL/API tests proving audit immutability and audit/outbox atomicity;
+10. CI green before merge.
 
-Only after M1 foundation is complete do we move to M2 Fleet & Drivers business modules.
+After M1.5, M1 foundation is complete and the project can move to **M2 Fleet & Drivers** business modules.
 
 ## Regulatory baseline
 
