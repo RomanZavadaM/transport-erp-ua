@@ -38,6 +38,15 @@
 - [Concurrency & Idempotency](03-API/Concurrency-and-Idempotency.md)
 - [Transaction Boundaries](03-API/Transaction-Boundaries.md)
 
+## 04 — UX
+- [Ролі та робочі простори](04-UX/Roles-and-Workspaces.md)
+- [Dispatcher Board](04-UX/Dispatcher-Board.md)
+- [Release Workspace](04-UX/Release-Workspace.md)
+- [Waybill Workspace](04-UX/Waybill-Workspace.md)
+- [Wireframes ролей](04-UX/Role-Wireframes.md)
+- [Спільні interaction patterns](04-UX/Interaction-Patterns.md)
+- [Навігація та інформаційна архітектура](04-UX/Navigation-and-Information-Architecture.md)
+
 ## 06 — Тестування
 - [Acceptance Criteria](06-Testing/Acceptance-Criteria.md)
 - [Test Strategy](06-Testing/Test-Strategy.md)
