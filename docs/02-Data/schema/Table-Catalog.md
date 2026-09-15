@@ -148,7 +148,23 @@
 
 ## Кількість
 
-Physical baseline містить **57 основних таблиць** без майбутніх projection/materialized views та без optional technical `background_jobs`/`security_events`.
+Physical baseline містить **77 основних таблиць** без майбутніх projection/materialized views та без optional technical `background_jobs`/`security_events`.
+
+Контрольний підрахунок:
+
+- Organization/Identity — 10;
+- Fleet — 8;
+- Drivers — 4;
+- Routes — 4;
+- Schedules — 6;
+- Trips — 6;
+- Duties/Dispatch — 7;
+- Release/Checks — 11;
+- Documents/Waybills/Files — 8;
+- Fuel — 1;
+- Maintenance/Repairs — 6;
+- Corrections — 1;
+- Audit/Integration/Operations — 5.
 
 Кількість не є ціллю сама по собі. Таблиці виділені там, де потрібні окремі:
 
