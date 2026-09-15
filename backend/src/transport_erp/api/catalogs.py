@@ -130,10 +130,12 @@ def _replace_route_stops(
     if len(set(stop_ids)) != len(stop_ids):
         raise HTTPException(status_code=400, detail="Зупинка не може повторюватися в маршруті.")
     placeholders = ",".join("?" for _ in stop_ids)
-    count = connection.execute(
-        f"SELECT COUNT(*) FROM stops WHERE company_id = ? AND active = 1 AND id IN ({placeholders})",
-        (company_id, *stop_ids),
-    ).fetchone()
+    query = (
+        "SELECT COUNT(*) FROM stops "
+        "WHERE company_id = ? AND active = 1 "
+        f"AND id IN ({placeholders})"
+    )
+    count = connection.execute(query, (company_id, *stop_ids)).fetchone()
     if count is None or int(count[0]) != len(stop_ids):
         raise HTTPException(status_code=400, detail="Одна або кілька зупинок недоступні.")
 
@@ -270,7 +272,13 @@ def create_route(payload: RouteInput) -> RouteResponse:
             company_id = _company_id(connection)
             connection.execute(
                 "INSERT INTO routes(id, company_id, number, name, active) VALUES (?, ?, ?, ?, ?)",
-                (route_id, company_id, payload.number.strip(), payload.name.strip(), int(payload.active)),
+                (
+                    route_id,
+                    company_id,
+                    payload.number.strip(),
+                    payload.name.strip(),
+                    int(payload.active),
+                ),
             )
             _replace_route_stops(connection, company_id, route_id, payload.stop_ids)
             return _load_route(connection, company_id, route_id)
@@ -288,7 +296,13 @@ def update_route(route_id: str, payload: RouteInput) -> RouteResponse:
                 UPDATE routes SET number = ?, name = ?, active = ?
                 WHERE id = ? AND company_id = ?
                 """,
-                (payload.number.strip(), payload.name.strip(), int(payload.active), route_id, company_id),
+                (
+                    payload.number.strip(),
+                    payload.name.strip(),
+                    int(payload.active),
+                    route_id,
+                    company_id,
+                ),
             )
             if cursor.rowcount == 0:
                 raise HTTPException(status_code=404, detail="Маршрут не знайдено.")
