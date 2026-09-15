@@ -8,7 +8,7 @@ TransportERP-UA — вебсистема для транспортного пі�
 
 ## Архітектурний baseline
 
-Поточна версія архітектури: **v1.3**.
+Поточна версія архітектури: **v1.4**.
 
 Ключові рішення:
 
@@ -26,13 +26,14 @@ TransportERP-UA — вебсистема для транспортного пі�
 - PostgreSQL exclusion constraints блокують часові конфлікти ресурсів;
 - optimistic locking та idempotency захищають конкурентні операції;
 - outbox events закладають основу для майбутніх інтеграцій;
-- tenant/company isolation є частиною моделі даних.
+- tenant/company isolation є частиною моделі даних;
+- українська є канонічною мовою, а i18n підтримує `uk/en/es/fr/de`.
 
 ## Мовна політика
 
 Українська документація є **канонічною**. У разі розбіжності між перекладом та українською версією пріоритет завжди має українська.
 
-Підтримувані мови документації:
+Підтримувані мови документації та інтерфейсу:
 
 - `uk` — українська, основна і нормативна для проєкту;
 - `en` — English;
@@ -40,7 +41,7 @@ TransportERP-UA — вебсистема для транспортного пі�
 - `fr` — Français;
 - `de` — Deutsch.
 
-Правила перекладів описані в [`docs/i18n/README.md`](docs/i18n/README.md).
+Правила перекладів описані в [`docs/i18n/README.md`](docs/i18n/README.md), а архітектура локалізації — у [`docs/01-Architecture/Localization.md`](docs/01-Architecture/Localization.md).
 
 ## Документація
 
@@ -50,9 +51,12 @@ TransportERP-UA — вебсистема для транспортного пі�
 
 - [`PROJECT_STATE.md`](PROJECT_STATE.md) — актуальний checkpoint проєкту;
 - [`ARCHITECTURE_VERSION.md`](ARCHITECTURE_VERSION.md) — версія архітектурного baseline;
+- [`docs/_index.md`](docs/_index.md) — індекс документації;
 - [`docs/00-Project/Project-Charter.md`](docs/00-Project/Project-Charter.md) — мета та рамки проєкту;
 - [`docs/01-Architecture/ADR`](docs/01-Architecture/ADR) — Architecture Decision Records;
+- [`docs/01-Architecture/Business-Rules`](docs/01-Architecture/Business-Rules) — каталог бізнес-правил;
 - [`docs/02-Data`](docs/02-Data) — модель даних і DB constraints;
+- [`docs/11-Traceability`](docs/11-Traceability) — простежуваність вимог;
 - [`docs/i18n`](docs/i18n) — переклади документації.
 
 ## Планована структура коду
