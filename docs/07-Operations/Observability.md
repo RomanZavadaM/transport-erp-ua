@@ -1,293 +1,206 @@
 # Спостережуваність системи
 
-Статус: **M0 production baseline**
+Статус: **architecture-v1.6 baseline**
 
-## 1. Ціль
+## 1. Принцип
+Observability має допомагати експлуатувати систему, а не створювати окремий інфраструктурний проєкт.
 
-Observability повинна дозволити відповісти на питання:
+Local Desktop і Central мають різні потреби.
 
-- система доступна чи ні;
-- який компонент деградував;
-- чи є втрата/затримка даних;
-- чи працює backup;
-- чи є черга невиконаних jobs/outbox events;
-- чи виникли integrity problems;
-- який release зараз працює;
-- хто і коли виконав критичну дію.
+## 2. Local Desktop — що реально потрібно
 
-## 2. Три рівні
+У застосунку має бути простий екран **«Стан системи»**, де видно:
 
-### Logs
+- версію TransportERP-UA;
+- schema version;
+- стан SQLite;
+- розмір БД;
+- вільне місце на диску;
+- останній успішний backup;
+- куди робиться backup;
+- останню перевірку restore/integrity;
+- кількість pending/failed transfer batches;
+- останню помилку передачі;
+- central connection status, якщо central налаштований;
+- node id.
 
-Structured JSON logs з:
+Цього достатньо для малого АТП без Prometheus/Grafana.
+
+## 3. Local logs
+
+Local application веде rotating logs у application-data каталозі.
+
+Мінімальні поля:
 
 - timestamp;
 - level;
-- service;
-- environment;
-- request_id;
-- correlation_id;
-- user_id там, де допустимо;
-- company_id там, де допустимо;
-- endpoint/command;
-- duration_ms;
-- result/error_code;
-- release/version.
+- application version;
+- request/operation id;
+- user id, де доречно;
+- command/action;
+- result/error code;
+- transfer batch id, якщо стосується передачі.
 
-### Metrics
+Logs не повинні містити passwords, session secrets, private keys, повні sensitive payloads або медичні деталі понад необхідне.
 
-Мінімум:
+Користувач/адміністратор має мати кнопку **«Відкрити журнал»** або **«Створити діагностичний пакет»**.
 
-- request rate;
-- HTTP error rate;
-- API latency percentiles;
-- active DB connections;
-- connection-pool saturation;
-- DB transaction errors/deadlocks;
-- worker queue depth;
-- job age;
-- outbox unpublished count/age;
+## 4. Local health checks
+
+Local застосунок перевіряє щонайменше:
+
+- SQLite відкривається;
+- schema version підтримується поточною версією програми;
+- application data directory доступний для запису;
+- document directory доступний;
+- backup destination доступний, якщо налаштований;
+- вільного дискового місця достатньо;
+- transfer queue не має застряглих approved batches понад configured threshold.
+
+Несправність central не робить local application `unhealthy` для локальної роботи.
+
+## 5. Local alerts
+
+Не потрібна складна alert platform.
+
+Застосунок показує оператору зрозумілі повідомлення:
+
+- резервної копії давно не було;
+- backup destination недоступний;
+- мало місця на диску;
+- SQLite integrity check failed;
+- передача не завершилася;
+- central запитує дані, що очікують локального підтвердження;
+- local update/recovery required.
+
+Critical повідомлення не повинні губитися після закриття toast — вони залишаються у системному стані до вирішення/підтвердження.
+
+## 6. Audit ≠ log
+
+Audit — business/security evidence.
+
+Log — технічна діагностика.
+
+Failed transfer може бути в log; approval/ACK/authority change обов’язково є і в audit.
+
+## 7. Local transfer monitoring
+
+UI показує окремо:
+
+- `PENDING_APPROVAL`;
+- `TRANSFERRING`;
+- failed/retryable;
+- `ACKNOWLEDGED`.
+
+Оператор повинен бачити, **що саме чекає його підтвердження**, а не технічну “queue depth”.
+
+Для failed batch показуються:
+
+- час останньої спроби;
+- коротка зрозуміла причина;
+- кнопка retry/diagnostics, якщо доречно.
+
+## 8. Local backup monitoring
+
+Екран стану показує:
+
+- останній backup;
+- результат;
+- розмір;
+- destination;
+- warning, якщо backup overdue;
+- last restore/integrity verification.
+
+Для малого АТП це важливіше за p99 latency dashboard.
+
+## 9. Local release diagnostics
+
+У UI завжди доступні:
+
+- application version;
+- build/Git SHA або release id;
+- DB schema version;
+- node id.
+
+Це достатньо, щоб під час підтримки зрозуміти, яка версія реально встановлена.
+
+## 10. Central observability
+
+Central server має server-grade monitoring відповідно до масштабу.
+
+Мінімально корисні показники:
+
+- API availability/error rate;
+- PostgreSQL health/connections;
+- receive/ACK failures;
+- pending central processing;
 - backup status;
-- WAL archive lag;
-- object replication lag;
-- integrity alerts;
-- disk/storage capacity;
-- CPU/RAM;
-- container restarts.
+- disk/storage;
+- open integrity alerts;
+- current release/schema version.
 
-### Health / synthetic checks
+При реальній потребі додаються Prometheus/Grafana або інший monitoring stack.
 
-Окремо:
+## 11. Central database monitoring
 
-- `/health/live` — process alive;
-- `/health/ready` — required dependencies доступні;
-- synthetic operational checks — ключові read-only paths і staging smoke flows.
+Для PostgreSQL доречні:
 
-## 3. Liveness
+- long-running transactions;
+- locks/deadlocks;
+- slow queries;
+- database growth;
+- backup/WAL state, якщо WAL використовується;
+- `pg_stat_statements` для profiling.
 
-Liveness не повинен перевіряти всі зовнішні системи.
+Це не local desktop requirement.
 
-Його мета — відповісти, чи живий application process.
+## 12. Health endpoints
 
-Невдала залежність не повинна автоматично створювати restart loop application container.
+Central API може мати:
 
-## 4. Readiness
+- `/health/live`;
+- `/health/ready`.
 
-Readiness перевіряє мінімум:
+Local desktop може мати внутрішній health endpoint для desktop shell, але користувач не повинен працювати з ним вручну.
 
-- PostgreSQL connection;
-- schema/revision compatibility;
-- critical configuration loaded;
-- object storage reachable, якщо API path залежить від нього.
+## 13. Sensitive data
 
-Redis не повинен робити весь API `not ready`, якщо Redis використовується лише для некритичного cache.
-
-## 5. Security logging
-
-Окремо логуються:
-
-- failed login;
-- account lock/throttle;
-- permission denied для critical actions;
-- session revoke;
-- role/permission changes;
-- credential/config rotation events;
-- suspicious rate-limit triggers.
-
-## 6. Заборонені дані у logs
-
-Не записуються у звичайний application log:
+Ні local, ні central logs не записують:
 
 - passwords;
-- access/refresh tokens;
-- session cookies;
+- session cookies/tokens;
+- authorization headers;
 - private keys;
-- full authorization headers;
 - backup credentials;
-- medical details понад мінімально необхідний audit факт;
-- document binary contents;
-- full request payload, якщо він містить sensitive data.
+- повні binary documents;
+- sensitive payloads без redaction.
 
-Для debugging payload redaction є обов’язковим.
+## 14. Production readiness Local Desktop
 
-## 7. Audit ≠ application log
+Перевірити:
 
-`audit_log` — business/security evidence і має окрему retention/immutability policy.
+- status screen;
+- log rotation;
+- diagnostic package;
+- backup warning;
+- disk-space warning;
+- transfer failure visibility;
+- version/schema visibility;
+- offline operation without false “system down” state.
 
-Application logs — operational diagnostics.
+## 15. Production readiness Central
 
-Не можна використовувати application log як єдиний audit trail.
+Додатково перевірити:
 
-## 8. Alert severity
-
-### Critical
-
-Приклади:
-
-- production API unavailable;
-- PostgreSQL unavailable;
-- confirmed backup/restore failure beyond RPO window;
-- WAL archiving stopped;
-- storage nearly full with imminent write failure;
-- integrity alert, який ставить під сумнів CLOSED history;
-- credential compromise.
-
-### High
-
-- growing DB connection saturation;
-- worker queue stalled;
-- outbox age above threshold;
-- object replication lag above target;
-- repeated 5xx spike;
-- backup delayed, але RPO ще не порушений.
-
-### Warning
-
-- storage approaching threshold;
-- increasing latency;
-- failed noncritical background job;
-- expiring TLS certificate;
-- restore drill due soon.
-
-## 9. Alert deduplication
-
-Monitoring не повинен надсилати сотні однакових alerts.
-
-Потрібні:
-
-- grouping;
-- deduplication;
-- silence/maintenance windows;
-- escalation rules;
-- recovery notification.
-
-## 10. SLO indicators
-
-До production launch вимірюємо щонайменше:
-
-- API availability;
-- p95/p99 latency ключових reads/commands;
-- failed critical command rate;
-- backup success ratio;
-- restore drill success;
-- outbox delivery delay;
-- worker job delay.
-
-Формальні SLA/SLO значення можуть бути затверджені бізнесом пізніше, але метрики мають збиратися від першої production версії.
-
-## 11. Dashboard: Operations
-
-Один operational dashboard повинен показувати:
-
-- current release;
-- application health;
-- DB health;
-- request rate/error rate/latency;
-- worker status;
-- outbox backlog;
-- last successful DB backup;
-- last successful WAL archive;
-- last successful object backup/replication;
-- last successful restore drill;
-- open integrity alerts;
-- storage capacity.
-
-## 12. Database monitoring
-
-Мінімум:
-
-- active/idle connections;
-- long-running transactions;
-- locks;
-- deadlocks;
-- query latency;
-- slow queries;
-- replication/archive status where applicable;
-- database size growth;
-- table/index bloat trend where meaningful.
-
-`pg_stat_statements` або еквівалентний PostgreSQL query statistics mechanism рекомендований для production profiling.
-
-## 13. Worker / outbox monitoring
-
-Окремо контролюємо:
-
-- queued jobs;
-- oldest queued job age;
-- retry count;
-- dead-letter/final-failed jobs;
-- unpublished outbox events;
-- oldest unpublished outbox event;
-- repeated integration errors.
-
-Не можна вважати систему healthy лише тому, що HTTP API відповідає 200, якщо critical worker queue стоїть годинами.
-
-## 14. Backup observability
-
-Dashboard/alerts мають знати:
-
-- last backup start/end;
-- backup size;
-- verification result;
-- WAL archive freshness;
-- off-site repository reachability;
-- last restore drill;
-- measured restore duration;
-- RPO/RTO target status.
-
-## 15. Integrity alerts
-
-`system_integrity_alerts` повинні мати окремий dashboard і escalation.
-
-Особливо критичні:
-
-- CLOSED trip без snapshot;
-- CLOSED Waybill без current immutable version;
-- Waybill version без PDF object;
-- hash mismatch;
-- authorized Release без authorization/evaluation evidence;
-- cross-tenant anomaly;
-- number-sequence inconsistency.
-
-## 16. Release observability
-
-Після deployment автоматично фіксується:
-
-- Git SHA;
-- release tag;
-- image digest;
-- migration revision;
-- deployment timestamp;
-- environment.
-
-При incident оператор повинен за хвилини визначити, який exact build працює.
-
-## 17. Retention
-
-Operational logs зберігаються обмежений строк і ротуються.
-
-Конкретний retention залежить від storage/security policy; baseline — не зберігати debug logs безстроково.
-
-Audit/legal evidence має окрему retention policy і не підпадає під звичайну log rotation.
-
-## 18. Час
-
-Усі server logs/metrics timestamps зберігаються в UTC.
-
-UI може показувати `Europe/Kyiv` або locale timezone, але кореляція incident timeline базується на UTC timestamps.
-
-## 19. Production readiness
-
-Перед production запуском перевіряється:
-
-- health endpoints;
-- dashboards;
-- Critical/High alerts;
+- central health endpoints;
+- DB monitoring;
 - backup alerts;
-- disk/storage alerts;
-- outbox/worker alerts;
-- integrity alerts;
-- release/version visibility;
-- log redaction.
+- transfer receive/ACK errors;
+- storage capacity;
+- release identification.
 
-Система без перевірених alerts не вважається production-ready.
+## 16. Правило складності
+
+Не додаємо monitoring component лише тому, що він типовий для великого SaaS.
+
+Додаємо його, коли є конкретна operational проблема, яку він вирішує.
