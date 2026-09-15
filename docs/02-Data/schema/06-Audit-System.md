@@ -30,11 +30,9 @@ Append-only журнал важливих дій.
 
 - normal application flow не UPDATE/DELETE audit rows;
 - sensitive values маскуються до запису;
-- локальний audit працює в SQLite без partitioning;
+- local audit працює в SQLite без partitioning;
 - central PostgreSQL може додати partitioning/indexes після підтвердженої потреби;
-- audit transfer/approval/ACK є обов’язковим.
-
-Для local M1.5 **не потрібні** monthly partitions, partition seals або окремий security-event cluster.
+- audit transfer preparation/approval/ACK/authority change є обов’язковим.
 
 # 2. Transfer batches
 
@@ -42,13 +40,11 @@ Append-only журнал важливих дій.
 
 Оператор працює з пакетом передачі, а не з технічними outbox rows.
 
-Мінімальні поля:
-
 | Поле | Призначення |
 |---|---|
 | id | batch UUID |
 | origin_node_id | локальний node UUID |
-| status | `PENDING_APPROVAL`, `TRANSFERRING`, `ACKNOWLEDGED`, `FAILED`, `CANCELLED` |
+| status | `PENDING_APPROVAL`, `TRANSFERRING`, `FAILED`, `ACKNOWLEDGED`, `CANCELLED` |
 | prepared_reason | `MANUAL`, `CENTRAL_REQUEST`, `RULE` |
 | prepared_at | коли сформовано |
 | prepared_by | хто сформував, nullable для rule/request |
@@ -65,44 +61,49 @@ Append-only журнал важливих дій.
 - без `approved_by/approved_at` batch не може перейти у `TRANSFERRING`;
 - central request або rule не заповнюють approval автоматично;
 - `ACKNOWLEDGED` ставиться лише після перевіреного central receipt;
-- невдала доставка може бути retry без повторного business approval, якщо payload batch не змінився;
-- зміна складу batch після approval вимагає нового approval.
+- failed delivery не змінює authority даних;
+- retry дозволений для того самого approved payload;
+- зміна складу/payload після approval вимагає нового approval.
 
 ## transfer_items
 
 | Поле | Призначення |
 |---|---|
 | transfer_batch_id | batch |
-| entity_type | тип business entity |
+| entity_type | тип aggregate/root entity |
 | entity_id | UUID |
 | entity_version | version на момент approval |
-| checksum | контроль того, що approved payload не змінився |
+| checksum | контроль approved payload |
 | transfer_order | deterministic order за потреби |
 
-PK/UNIQUE гарантує, що один entity item не дублюється в одному batch.
+PK/UNIQUE гарантує, що один item не дублюється в одному batch.
 
-# 3. Local authority state
+# 3. Business authority
 
-Для transferable business records або окремої authority registry зберігається стан:
+Authority і transfer workflow — різні речі.
 
-- `LOCAL`;
-- `PENDING_APPROVAL`;
-- `TRANSFERRING`;
-- `CENTRAL`.
+Для transferable aggregate/root зберігається:
 
-Після `ACKNOWLEDGED` відповідні items переходять у `CENTRAL`.
+- `authority = LOCAL | CENTRAL`;
+- optional `transfer_lock_batch_id` для тимчасового блокування approved payload;
+- `central_version` / `central_ack_id` / `central_synced_at` після переходу на central.
 
-Local backend відхиляє business UPDATE/DELETE для `CENTRAL` records.
+Правила:
 
-UI лише відображає цю заборону; гарантія знаходиться в application/backend layer і за можливості підсилюється SQLite trigger/constraint.
+- до valid ACK authority = `LOCAL`;
+- `PENDING_APPROVAL`, `TRANSFERRING`, `FAILED` є статусами batch, не authority;
+- після operator approval records можуть мати temporary transfer lock;
+- failed/cancelled transfer не переводить authority у `CENTRAL`;
+- після verified ACK local transaction встановлює authority=`CENTRAL` і прибирає temporary transfer lock;
+- local backend відхиляє business UPDATE/DELETE для authority=`CENTRAL`.
+
+UI лише відображає цю заборону; гарантія знаходиться в backend і за можливості підсилюється SQLite trigger.
 
 # 4. Delivery outbox
 
-## outbox_events / transfer_delivery_queue
+## transfer_delivery_queue
 
-Outbox — технічна черга надійної доставки.
-
-Мінімальні поля:
+Outbox — технічна черга надійної доставки **вже схваленого** batch.
 
 | Поле | Призначення |
 |---|---|
@@ -113,15 +114,15 @@ Outbox — технічна черга надійної доставки.
 | attempt_count | кількість спроб |
 | last_attempt_at | остання спроба |
 | last_error | технічна помилка |
-| completed_at | доставка завершена/ACK оброблено |
+| completed_at | ACK оброблено |
 
-Local SQLite має одного application-managed delivery worker. Немає потреби в `FOR UPDATE SKIP LOCKED`, Redis або окремому queue broker.
+Local SQLite має одного application-managed delivery worker. Немає потреби в `FOR UPDATE SKIP LOCKED`, Redis або queue broker.
 
-Central PostgreSQL при масштабуванні може мати кілька workers і використовувати PostgreSQL locking semantics.
+Central PostgreSQL при масштабуванні може мати кілька workers.
 
 # 5. Central receive receipt
 
-Central endpoint повинен приймати batch idempotently.
+Central endpoint приймає batch idempotently.
 
 Central зберігає щонайменше:
 
@@ -131,11 +132,11 @@ Central зберігає щонайменше:
 - received_at;
 - ack_id.
 
-Повторне надсилання того самого незміненого batch повертає той самий логічний результат/ACK і не дублює business rows.
+Повторне надсилання того самого незміненого batch повертає той самий логічний ACK і не дублює business rows.
 
 # 6. Central changes back to local
 
-Після переходу authority у `CENTRAL` local copy є read-only.
+Після authority=`CENTRAL` local copy є read-only.
 
 Якщо central змінює запис, local може отримати нову version/snapshot. Це оновлення не повертає local edit rights.
 
@@ -145,26 +146,21 @@ Local reports можуть будуватися безпосередньо з SQ
 
 Central reports можуть будуватися з PostgreSQL.
 
-`report_exports`/background report queue вводиться лише коли реальний report потребує довгої async generation. Для M1.5 окрема report job infrastructure не обов’язкова.
+`report_exports`/background report queue вводиться лише коли реальний report потребує async generation.
 
 # 8. Integrity Monitoring
-
-## system_integrity_alerts
-
-Може існувати і local, і central.
 
 Початкові local checks:
 
 - `CENTRAL_RECORD_EDIT_ATTEMPT`;
-- `ACKNOWLEDGED_BATCH_WITH_LOCAL_ITEMS`;
+- `ACKNOWLEDGED_BATCH_WITH_NONCENTRAL_ITEMS`;
 - `TRANSFERRING_BATCH_WITHOUT_APPROVAL`;
 - `TRANSFER_CHECKSUM_MISMATCH`;
+- `TRANSFER_LOCK_WITHOUT_ACTIVE_BATCH`;
 - `MISSING_LOCAL_DOCUMENT_FILE`;
 - `SQLITE_INTEGRITY_FAILURE`;
 - `BACKUP_OVERDUE`;
 - `DISK_SPACE_LOW`.
-
-Пізніше додаються доменні checks для CLOSED history, Release, Waybill тощо.
 
 Checker не silent-fix-ить business history.
 
@@ -185,6 +181,6 @@ Failed login, role/permission changes, restore, backup, transfer approval та a
 - multi-master conflict resolution;
 - складні projection pipelines.
 
-M1.5 повинен спочатку надійно пройти практичний сценарій:
+M1.5 повинен пройти сценарій:
 
-`local edit → prepare batch → operator approve → network interruption/retry → central ACK → local read-only`.
+`local edit → prepare batch → operator approve → temporary transfer lock → retry if needed → central ACK → authority LOCAL→CENTRAL → local read-only`.
