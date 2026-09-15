@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
-from typing import Iterator, Literal
+from typing import Literal, cast
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException
@@ -86,7 +87,7 @@ def _vehicle_from_row(row: sqlite3.Row) -> VehicleResponse:
         make=str(row["make"]),
         model=str(row["model"]),
         year=int(row["year"]) if row["year"] is not None else None,
-        lifecycle_status=str(row["lifecycle_status"]),
+        lifecycle_status=cast(VehicleStatus, str(row["lifecycle_status"])),
         row_version=int(row["row_version"]),
     )
 
@@ -99,7 +100,7 @@ def _driver_from_row(row: sqlite3.Row) -> DriverResponse:
         first_name=str(row["first_name"]),
         middle_name=str(row["middle_name"]) if row["middle_name"] is not None else None,
         phone=str(row["phone"]) if row["phone"] is not None else None,
-        employment_status=str(row["employment_status"]),
+        employment_status=cast(DriverStatus, str(row["employment_status"])),
         row_version=int(row["row_version"]),
     )
 
@@ -125,6 +126,7 @@ def list_vehicles() -> list[VehicleResponse]:
 def create_vehicle(payload: VehicleInput) -> VehicleResponse:
     now = datetime.now(UTC).isoformat()
     vehicle_id = str(uuid4())
+    row: sqlite3.Row | None = None
     try:
         with _connection() as connection:
             company_id = _company_id(connection)
@@ -170,6 +172,7 @@ def create_vehicle(payload: VehicleInput) -> VehicleResponse:
 @router.put("/vehicles/{vehicle_id}", response_model=VehicleResponse)
 def update_vehicle(vehicle_id: str, payload: VehicleInput) -> VehicleResponse:
     now = datetime.now(UTC).isoformat()
+    row: sqlite3.Row | None = None
     try:
         with _connection() as connection:
             company_id = _company_id(connection)
@@ -234,6 +237,7 @@ def list_drivers() -> list[DriverResponse]:
 def create_driver(payload: DriverInput) -> DriverResponse:
     now = datetime.now(UTC).isoformat()
     driver_id = str(uuid4())
+    row: sqlite3.Row | None = None
     try:
         with _connection() as connection:
             company_id = _company_id(connection)
@@ -278,6 +282,7 @@ def create_driver(payload: DriverInput) -> DriverResponse:
 @router.put("/drivers/{driver_id}", response_model=DriverResponse)
 def update_driver(driver_id: str, payload: DriverInput) -> DriverResponse:
     now = datetime.now(UTC).isoformat()
+    row: sqlite3.Row | None = None
     try:
         with _connection() as connection:
             company_id = _company_id(connection)
