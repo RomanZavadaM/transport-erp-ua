@@ -29,12 +29,7 @@ def _ensure_sqlite_parent(database_url: str) -> None:
     Path(url.database).expanduser().parent.mkdir(parents=True, exist_ok=True)
 
 
-@lru_cache
-def get_engine() -> Engine:
-    settings = get_settings()
-    database_url = settings.database_url
-    assert database_url is not None
-
+def create_database_engine(database_url: str) -> Engine:
     _ensure_sqlite_parent(database_url)
     url = make_url(database_url)
     is_sqlite = url.get_backend_name() == "sqlite"
@@ -47,6 +42,14 @@ def get_engine() -> Engine:
     if is_sqlite:
         event.listen(engine, "connect", _configure_sqlite_connection)
     return engine
+
+
+@lru_cache
+def get_engine() -> Engine:
+    settings = get_settings()
+    database_url = settings.database_url
+    assert database_url is not None
+    return create_database_engine(database_url)
 
 
 @lru_cache
