@@ -1,6 +1,6 @@
 # PROJECT_STATE
 
-## Architecture baseline
+## Архітектурний baseline
 
 Версія архітектури: **v1.3**
 
@@ -12,17 +12,26 @@
 - `Duty` = наряд / виробнича зміна, що містить 1..N рейсів.
 - `Release` належить Duty.
 - `Waybill` базово належить Duty і може містити 1..N рейсів.
-- Plan і Fact розділені.
+- План і факт розділені.
 - Закриті фактичні дані мають immutable snapshots.
 - Waybill має immutable versions.
 - Correction workflow не відкриває закритий об'єкт повторно.
 - Audit append-only.
-- Critical state changes виконуються командами, а не довільним PATCH status.
+- Критичні зміни станів виконуються командами, а не довільним PATCH status.
 - PostgreSQL exclusion constraints захищають від double-booking автобусів та водіїв.
 - Optimistic locking (`row_version` / ETag) захищає від lost update.
 - Idempotency-Key використовується для критичних повторюваних команд.
 - Outbox закладений для інтеграцій.
 - Tenant/company isolation є частиною моделі.
+
+## Мовна політика
+
+- **Українська (`uk`) — основна, канонічна та нормативна мова проєкту.**
+- Переклади підтримуються англійською (`en`), іспанською (`es`), французькою (`fr`) та німецькою (`de`).
+- Архітектурні рішення, бізнес-правила, acceptance criteria та юридично значимі описи спочатку затверджуються українською.
+- Переклади не є окремими джерелами вимог.
+- У разі будь-якої розбіжності між перекладом і українським оригіналом пріоритет має український текст.
+- Структура перекладів: `docs/i18n/<language>/...`.
 
 ## Наступна архітектурна робота
 
@@ -36,10 +45,11 @@
 
 ## Repository governance baseline
 
-- Documentation root doubles as Obsidian Vault: `docs/`.
-- ADRs record architectural decisions; accepted ADRs are not rewritten to hide history.
-- Stable Business Rule IDs introduced (`BR-*`).
-- Stable Acceptance Test IDs introduced (`AT-*`).
-- Traceability matrix introduced.
-- Legal sources are tracked separately and must be verified before regulatory implementation freeze.
-- Bootstrap backlog exists in `docs/12-Backlog`; GitHub Issues becomes the task-level tracker after repository publication.
+- `docs/` є канонічним Obsidian Vault.
+- Основна документація у `docs/` ведеться українською.
+- Переклади зберігаються під `docs/i18n/` і мають посилатися на канонічний український документ.
+- ADR фіксують архітектурні рішення; accepted ADR не переписуються так, щоб приховати історію.
+- Стабільні Business Rule ID використовують формат `BR-*`.
+- Стабільні Acceptance Test ID використовують формат `AT-*`.
+- Traceability matrix є частиною архітектурної документації.
+- Законодавчі джерела ведуться окремо й перевіряються перед regulatory implementation freeze.
