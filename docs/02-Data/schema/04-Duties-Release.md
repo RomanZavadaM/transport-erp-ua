@@ -1,5 +1,7 @@
 # PostgreSQL Schema — Duties, Assignments & Release
 
+Статус: **M0 freeze-aligned physical design**
+
 # Duties
 
 ## duties
@@ -36,6 +38,8 @@ Indexes:
 - `(company_id,service_date)`;
 - `(company_id,status,service_date)`;
 - `(company_id,depot_id,service_date)`.
+
+`service_date` є explicit historical value і не переобчислюється після зміни company operational-day policy.
 
 ## duty_trips
 
@@ -110,6 +114,7 @@ Indexes:
 | duty_id | uuid | NOT NULL |
 | driver_id | uuid | NOT NULL |
 | assignment_role | varchar(30) | NOT NULL |
+| crew_mode | varchar(20) | NOT NULL DEFAULT `SINGLE` |
 | assignment_period | tstzrange | NOT NULL |
 | assignment_status | varchar(20) | NOT NULL |
 | assigned_at | timestamptz | NOT NULL |
@@ -122,14 +127,18 @@ Critical exclusion:
 
 `EXCLUDE USING gist (company_id WITH =, driver_id WITH =, assignment_period WITH &&) WHERE assignment_status='ACTIVE'`.
 
-Roles:
+CHECK crew_mode IN (`SINGLE`,`CREW`).
+
+Internal assignment roles:
 
 - `PRIMARY`;
 - `SECOND_DRIVER`;
 - `RELIEF`;
-- `TRAINEE` if later approved.
+- `TRAINEE` if approved by enterprise policy.
 
-Окремий partial exclusion/guard для overlapping `PRIMARY` у тому самому Duty буде доданий physical DDL, якщо exact crew policy підтверджено.
+`crew_mode` є окремим regulatory/execution concept і не виводиться автоматично лише з `assignment_role`.
+
+Не створюється нормативний constraint «рівно один PRIMARY на весь Duty». Global same-driver overlap protection діє незалежно від crew mode.
 
 ## duty_vehicle_usage
 
@@ -158,11 +167,14 @@ Historical row не перезаписує planned assignment. Period може �
 | duty_id | uuid | NOT NULL |
 | driver_id | uuid | NOT NULL |
 | usage_role | varchar(30) | NOT NULL |
+| crew_mode | varchar(20) | NOT NULL DEFAULT `SINGLE` |
 | actual_period | tstzrange | NOT NULL |
 | source | varchar(30) | NOT NULL |
 | created_at | timestamptz | NOT NULL |
 
-Використовується майбутнім worktime/payroll context як factual source.
+CHECK crew_mode IN (`SINGLE`,`CREW`).
+
+Використовується future worktime/payroll/compliance context як factual source. Crew mode може змінюватися між часовими usage segments одного Duty.
 
 ## duty_events
 
@@ -221,16 +233,18 @@ Release один на Duty; нові checks/evaluations додаються до 
 |---|---|---|
 | id | uuid | PK |
 | company_id | uuid | NULL/system or tenant |
-| check_type | varchar(30) | NOT NULL |
+| check_type | varchar(40) | NOT NULL |
 | name | text | NOT NULL |
 | version_no | integer | NOT NULL |
 | valid_period | daterange | NOT NULL |
 | active | boolean | NOT NULL DEFAULT true |
 | created_at | timestamptz | NOT NULL |
 
-CHECK check_type IN (`MEDICAL`,`TECHNICAL`).
+CHECK check_type IN (`MEDICAL`,`TECHNICAL`,`DRIVER_TECHNICAL_PREDEPARTURE`).
 
 Versioned template не переписується після використання.
+
+`DRIVER_TECHNICAL_PREDEPARTURE` фіксує окреме evidence обов'язкової передвиїзної перевірки технічного стану водієм і не підмінює qualified technical inspection.
 
 ## check_template_items
 
@@ -258,7 +272,7 @@ UNIQUE `(template_id,code)` і `(template_id,sequence_no)`.
 | company_id | uuid | NOT NULL |
 | release_id | uuid | NOT NULL |
 | template_id | uuid | NULL |
-| check_type | varchar(30) | NOT NULL |
+| check_type | varchar(40) | NOT NULL |
 | subject_type | varchar(30) | NOT NULL |
 | subject_id | uuid | NOT NULL |
 | status | varchar(20) | NOT NULL |
@@ -269,9 +283,18 @@ UNIQUE `(template_id,code)` і `(template_id,sequence_no)`.
 | comment | text | NULL |
 | created_at | timestamptz | NOT NULL |
 
-CHECK status IN (`PENDING`,`IN_PROGRESS`,`PASSED`,`FAILED`).
+CHECK:
 
-Після `PASSED/FAILED` row immutable для runtime update, крім технічних metadata, якщо такі будуть явно дозволені.
+- check_type IN (`MEDICAL`,`TECHNICAL`,`DRIVER_TECHNICAL_PREDEPARTURE`);
+- status IN (`PENDING`,`IN_PROGRESS`,`PASSED`,`FAILED`).
+
+Після `PASSED/FAILED` row immutable для runtime update, окрім явно дозволеної technical metadata. Помилка в completed result виправляється invalidation + new check.
+
+Actor rules:
+
+- `MEDICAL` — користувач із `medical_check.perform`;
+- `TECHNICAL` — qualified/authorized actor із `technical_check.perform`;
+- `DRIVER_TECHNICAL_PREDEPARTURE` — assigned driver у власному Duty через dedicated permission/scope.
 
 ## medical_check_details
 
@@ -280,14 +303,17 @@ CHECK status IN (`PENDING`,`IN_PROGRESS`,`PASSED`,`FAILED`).
 | pre_trip_check_id | uuid | PK/FK |
 | company_id | uuid | NOT NULL |
 | driver_id | uuid | NOT NULL |
-| fitness_result | varchar(30) | NOT NULL |
-| restriction_code | varchar(80) | NULL |
+| fitness_result | varchar(20) | NOT NULL |
 
-CHECK fitness_result IN (`FIT`,`UNFIT`,`FIT_WITH_RESTRICTIONS`) pending legal/policy confirmation.
+CHECK fitness_result IN (`FIT`,`UNFIT`).
 
-Не зберігати діагноз без окремої юридичної потреби.
+`UNFIT` є blocking result. `FIT_WITH_RESTRICTIONS` не входить у M0 щозмінний medical result set.
+
+Не зберігати діагноз або зайві медичні дані без окремої підтвердженої потреби.
 
 ## technical_check_details
+
+Деталі qualified technical inspection (`check_type=TECHNICAL`).
 
 | Поле | Тип | Правила |
 |---|---|---|
@@ -300,6 +326,8 @@ CHECK fitness_result IN (`FIT`,`UNFIT`,`FIT_WITH_RESTRICTIONS`) pending legal/po
 | inspection_place | text | NULL |
 
 CHECK odometer_km >=0; result IN (`PASSED`,`FAILED`).
+
+Driver pre-departure check використовує `pre_trip_checks` + versioned `check_results`; він не створює другий qualified `technical_check_details` row.
 
 ## check_results
 
@@ -315,7 +343,7 @@ CHECK odometer_km >=0; result IN (`PASSED`,`FAILED`).
 
 UNIQUE `(pre_trip_check_id,template_item_id)`.
 
-Backend derive final technical result from blocking items; frontend не задає довільно final PASS всупереч item results.
+Backend derives final technical/driver-predeparture result from blocking items; frontend не задає довільно final PASS всупереч item results.
 
 ## pre_trip_check_invalidations
 
@@ -344,10 +372,15 @@ Original `PASSED/FAILED` row залишається історично незм�
 | severity | varchar(20) | NOT NULL |
 | blocking | boolean | NOT NULL |
 | valid_period | daterange | NOT NULL |
+| applicability | jsonb | NOT NULL DEFAULT `{}` |
 | configuration | jsonb | NOT NULL DEFAULT `{}` |
 | active | boolean | NOT NULL DEFAULT true |
 
 Stable `code` використовується audit/API/traceability.
+
+`applicability` визначає transport/service/route context, для якого rule діє. Один global `required_for_release` seed не підмінює context-aware compliance evaluation.
+
+Rule version/effective period забезпечує історичне відтворення Release decision.
 
 ## release_rule_evaluations
 
@@ -396,3 +429,5 @@ CHECK decision IN (`AUTHORIZED`,`REJECTED`).
 Partial UNIQUE `(release_id)` WHERE decision='AUTHORIZED'.
 
 Позитивна авторизація може існувати лише одна; negative decisions можуть зберігатися як history відповідно до workflow.
+
+Перед `AUTHORIZED` fresh evaluation знову перевіряє effective medical FIT, qualified technical check, driver pre-departure technical evidence, contextual documents, blocking defects/repairs та інші applicable rules.
