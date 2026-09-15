@@ -2,9 +2,11 @@
 
 ## Поточний baseline
 
-Версія: **architecture-v1.5**  
-Статус: **M0 Architecture Freeze — FROZEN**  
-Канонічна мова: **українська (`uk`)**; підтримувані переклади: `en`, `es`, `fr`, `de`.
+Архітектура: **architecture-v1.5**  
+Статус архітектури: **M0 Architecture Freeze — FROZEN**  
+Канонічна мова: **українська (`uk`)**; переклади: `en`, `es`, `fr`, `de`.
+
+Поточний етап реалізації: **M1.4 — Identity and access foundation**.
 
 ## Frozen core decisions
 
@@ -22,7 +24,7 @@
 - Tenant isolation + RLS — частина physical design.
 - Transactional outbox та integrity checker закладені в core.
 
-## M0 packages завершено
+## M0 завершено
 
 - MVP Definition Package;
 - API Contract Package `/api/v1`;
@@ -34,30 +36,113 @@
 - production topology, backup/PITR, DR, observability;
 - regulatory/business review `MR-001..MR-007`.
 
-## Final cross-document corrections
+## M1 — стан реалізації
 
-Physical schema/API синхронізовані з review:
+### M1.1 Application skeleton + CI — DONE
 
-- medical result set: `FIT | UNFIT`;
-- separate `DRIVER_TECHNICAL_PREDEPARTURE` evidence;
-- technical checker — qualification/permission based actor;
-- multi-driver crew model + `crew_mode`;
-- context/version-aware document compliance;
-- Waybill explicit `document_role`;
-- M0 default: один active `PRIMARY` Waybill на Duty;
-- class-based file retention metadata;
-- OpenAPI freeze overlay виправляє застарілі деталі base draft.
+- FastAPI backend skeleton;
+- Next.js + TypeScript frontend skeleton;
+- development Docker Compose;
+- CI gates: Ruff, strict mypy, pytest, ESLint, TypeScript, production build, Compose validation.
 
-Machine API contract M1:
+Merged to `main` as commit `f85c6b9…`.
 
-- `docs/03-API/openapi-mvp-v1.yaml`;
-- `docs/03-API/openapi-mvp-v1-freeze-overlay.yaml`.
+### M1.2 Consolidated OpenAPI — DONE
 
-Перед backend implementation вони мають бути зведені у consolidated OpenAPI та пройти validation/contract tests.
+- base OpenAPI + freeze overlay;
+- deterministic consolidator;
+- machine-readable canonical `docs/03-API/openapi-mvp-v1-consolidated.yaml`;
+- structural OpenAPI 3.1 validation;
+- freeze-invariant validation;
+- CI drift check.
+
+Merged to `main` as commit `27ac384…`.
+
+### M1.3 Alembic migration #1 + PostgreSQL invariants — DONE
+
+Merged to `main` as commit:
+
+`d64c765b9ed6ee7acdf1add12fbf4ae26edeeba8`
+
+Implemented:
+
+- Alembic bootstrap;
+- PostgreSQL 16 physical schema;
+- all **77 core tables**;
+- `pgcrypto`, `citext`, `btree_gist`;
+- tenant-aware FK;
+- RLS;
+- immutable history triggers;
+- GiST `EXCLUDE` constraints for vehicle/driver time conflicts;
+- route/schedule version overlap protection;
+- generated Trip uniqueness;
+- PRIMARY Waybill constraint;
+- medical result set `FIT | UNFIT`;
+- separate `DRIVER_TECHNICAL_PREDEPARTURE` check type;
+- full initial downgrade.
+
+CI lifecycle verified:
+
+`upgrade head → 12 PostgreSQL acceptance tests → downgrade base → upgrade head → schema verification`
+
+Acceptance suite verifies, among other things:
+
+- exactly 77 core tables;
+- cross-tenant FK rejection;
+- vehicle double-booking rejection;
+- driver double-booking rejection;
+- duplicate generated Trip rejection;
+- second active PRIMARY Waybill rejection;
+- invalid medical result rejection;
+- append-only/immutable historical records;
+- RLS tenant isolation.
+
+Issue #18 is closed.
+
+## M1.4 — Identity and access foundation — ACTIVE
+
+GitHub Issue: **#19**.
+
+Goal: implement the base users/roles/permissions/session/tenant access layer on top of the already-created PostgreSQL identity schema.
+
+Already confirmed before implementation:
+
+- backend authorizes by **permission code**, not hardcoded role name;
+- tenant isolation is independent from RBAC;
+- administrator permissions do not implicitly grant dispatcher/medical/technical business permissions;
+- role permissions must support separation-of-duties policy;
+- `users`, `user_sessions`, `roles`, `permissions`, `user_roles`, `role_permissions` already exist in migration #1;
+- browser auth must avoid long-lived credentials in localStorage;
+- canonical permission catalog: `docs/03-API/Permissions-Catalog.md`;
+- canonical identity schema: `docs/02-Data/schema/01-Organization-Identity.md`.
+
+### Planned M1.4 implementation order
+
+1. create `identity` backend module boundaries (`domain/application/infrastructure/api`);
+2. database transaction/session abstraction with tenant context (`SET LOCAL app.company_id`);
+3. password hashing with Argon2id;
+4. user repository and status handling (`ACTIVE/SUSPENDED/DISABLED`);
+5. role/permission repositories and effective-permission resolution;
+6. session issuance using opaque random token + only token hash stored in DB;
+7. secure session cookie contract and logout/revocation;
+8. `/api/v1/auth/login`, `/logout`, `/me`, `/permissions`;
+9. reusable FastAPI `require_permission(...)` dependency;
+10. user/role management foundation required by MVP;
+11. PostgreSQL integration tests for tenant/RBAC/session isolation;
+12. API tests for 401/403, suspended/disabled users, revoked/expired sessions and permission enforcement;
+13. CI green before merge.
+
+M1.4 is **not yet implemented** at this checkpoint; analysis of Issue #19, permissions catalog and identity schema has started.
+
+## Next after M1.4
+
+M1.5 — audit/outbox/observability foundation (Issue #20).
+
+Only after M1 foundation is complete do we move to M2 Fleet & Drivers business modules.
 
 ## Regulatory baseline
 
-Стан перевірено на 15.09.2026. Канонічні документи:
+State verified on 15.09.2026. Canonical documents:
 
 - `docs/10-Legal/Regulatory-Register.md`;
 - `docs/10-Legal/Regulatory-Review-2026-09.md`;
@@ -66,10 +151,10 @@ Machine API contract M1:
 
 Traceability: `source → MR decision → BR-* → API/DB/policy → AT-*`.
 
-## Deferred — не blockers для M1
+## Deferred — not blockers for M1
 
-- GPS / live monitoring;
-- passenger accounting / e-ticketing;
+- GPS/live monitoring;
+- passenger accounting/e-ticketing;
 - mobile driver app;
 - payroll/accounting;
 - fuel-card integration;
@@ -79,27 +164,13 @@ Traceability: `source → MR decision → BR-* → API/DB/policy → AT-*`.
 - additional non-primary document roles;
 - final enterprise retention periods.
 
-Deferred work не може змінювати frozen M0 invariants без ADR + impact review.
-
-## M1 — наступний milestone
-
-Після merge цього freeze baseline і створення tag `architecture-v1.5` порядок старту:
-
-1. application repository skeleton;
-2. CI quality gates;
-3. consolidated OpenAPI validation;
-4. Alembic bootstrap;
-5. migration #1 + PostgreSQL acceptance tests;
-6. identity/RBAC/tenant foundation;
-7. audit/outbox/observability foundation.
-
-До проходження schema acceptance tests модулі M2+ не вважаються готовими до реалізації.
+Deferred work cannot change frozen M0 invariants without ADR + impact review.
 
 ## Repository governance
 
-- `docs/` — канонічний Obsidian Vault;
-- значні зміни — branch + Pull Request;
-- accepted ADR не переписуються із приховуванням історії;
+- `docs/` — canonical Obsidian Vault;
+- significant changes — branch + Pull Request;
+- accepted ADR are not silently rewritten;
 - Business Rule IDs: `BR-*`;
 - Acceptance Test IDs: `AT-*`;
-- secrets та production data у Git не зберігаються.
+- secrets and production data are never stored in Git.
