@@ -34,6 +34,39 @@ def local_client(
     _clear_runtime_caches()
 
 
+def _create_vehicle(local_client: TestClient, fleet_number: str = "101") -> str:
+    created = local_client.post(
+        "/api/vehicles",
+        json={
+            "fleet_number": fleet_number,
+            "registration_number": f"BC{fleet_number}AA",
+            "vin": f"TESTVIN{fleet_number}",
+            "make": "Ataman",
+            "model": "A092",
+            "year": 2020,
+            "lifecycle_status": "ACTIVE",
+        },
+    )
+    assert created.status_code == 201
+    return str(created.json()["id"])
+
+
+def _create_driver(local_client: TestClient, personnel_number: str = "D-001") -> str:
+    created = local_client.post(
+        "/api/drivers",
+        json={
+            "personnel_number": personnel_number,
+            "last_name": "Іваненко",
+            "first_name": "Іван",
+            "middle_name": "Іванович",
+            "phone": "+380670000000",
+            "employment_status": "ACTIVE",
+        },
+    )
+    assert created.status_code == 201
+    return str(created.json()["id"])
+
+
 def test_local_status_and_backup(local_client: TestClient) -> None:
     status_response = local_client.get("/api/local/status")
     assert status_response.status_code == 200
@@ -169,3 +202,58 @@ def test_stops_and_ordered_route(local_client: TestClient) -> None:
         "Центр",
         "Автовокзал",
     ]
+
+
+def test_vehicle_document_is_visible_in_card(local_client: TestClient) -> None:
+    vehicle_id = _create_vehicle(local_client)
+    added = local_client.post(
+        f"/api/vehicles/{vehicle_id}/documents",
+        json={
+            "document_type": "Свідоцтво про реєстрацію",
+            "number": "СХА 123456",
+            "valid_until": None,
+            "note": "Оригінал у диспетчера",
+        },
+    )
+    assert added.status_code == 201
+
+    details = local_client.get(f"/api/vehicles/{vehicle_id}/details")
+    assert details.status_code == 200
+    assert details.json()["documents"][0]["number"] == "СХА 123456"
+
+
+def test_odometer_rejects_decrease(local_client: TestClient) -> None:
+    vehicle_id = _create_vehicle(local_client)
+    first = local_client.post(
+        f"/api/vehicles/{vehicle_id}/odometer",
+        json={"reading_km": 150000, "note": "Початкове показання"},
+    )
+    assert first.status_code == 201
+
+    lower = local_client.post(
+        f"/api/vehicles/{vehicle_id}/odometer",
+        json={"reading_km": 149999, "note": "Помилкове показання"},
+    )
+    assert lower.status_code == 400
+
+    details = local_client.get(f"/api/vehicles/{vehicle_id}/details")
+    assert details.status_code == 200
+    assert details.json()["odometer"][0]["reading_km"] == 150000
+
+
+def test_driver_document_is_visible_in_card(local_client: TestClient) -> None:
+    driver_id = _create_driver(local_client)
+    added = local_client.post(
+        f"/api/drivers/{driver_id}/documents",
+        json={
+            "document_type": "Посвідчення водія",
+            "number": "ABC123456",
+            "valid_until": "2030-12-31",
+            "note": None,
+        },
+    )
+    assert added.status_code == 201
+
+    details = local_client.get(f"/api/drivers/{driver_id}/details")
+    assert details.status_code == 200
+    assert details.json()["documents"][0]["document_type"] == "Посвідчення водія"
