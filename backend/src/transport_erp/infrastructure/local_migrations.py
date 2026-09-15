@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from alembic import command
-from alembic.config import Config
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect
 from sqlalchemy.engine import make_url
 from sqlalchemy.engine.reflection import Inspector
-from sqlalchemy import inspect
+
+from alembic import command
+from alembic.config import Config
 
 
 def _backend_root() -> Path:
