@@ -29,7 +29,6 @@
 
 - первинний domain/architecture baseline;
 - state-machine та concurrency principles;
-- database integrity principles;
 - repository/Obsidian structure;
 - Business Rule IDs, Acceptance IDs і traceability foundation;
 - multilingual architecture;
@@ -40,13 +39,38 @@
   - каталог MVP екранів;
   - production Definition of Done;
 - **API Contract Package**:
-  - повний semantic endpoint catalog;
+  - semantic endpoint catalog `/api/v1`;
   - DTO/schema rules;
   - stable error catalog;
   - permission catalog;
-  - optimistic concurrency та idempotency contract;
-  - transaction boundaries critical commands;
-  - machine-readable OpenAPI 3.1 draft для core MVP surface.
+  - concurrency/idempotency contract;
+  - transaction boundaries;
+  - machine-readable OpenAPI 3.1 draft;
+- **PostgreSQL Physical Schema v1**:
+  - 77 core tables;
+  - exact fields/types for M0 domains;
+  - PK/FK/UNIQUE/CHECK/EXCLUDE strategy;
+  - tenant-aware composite FK;
+  - RLS policy;
+  - immutable/append-only policy;
+  - index/partition strategy;
+  - restrictive delete policy;
+  - ERD v1;
+  - migration-readiness checklist.
+
+## Відкриті policy items перед rigid DDL/seed
+
+Позначені як `MR-*` у `docs/02-Data/schema/09-Migration-Readiness.md`:
+
+- точний допустимий набір результатів медичного контролю;
+- остаточна cardinality/типізація Waybill на Duty;
+- crew policy для ролей водіїв усередині одного Duty;
+- нормативний каталог required/blocking документів;
+- operational-day cutoff policy;
+- формат/скидання нумерації Waybill;
+- retention/object-lock policy.
+
+Це не архітектурні прогалини: вони навмисно не фіксуються припущенням до business/legal review.
 
 ## Мовна політика
 
@@ -54,28 +78,27 @@
 - Переклади підтримуються англійською (`en`), іспанською (`es`), французькою (`fr`) та німецькою (`de`).
 - Архітектурні рішення, бізнес-правила, acceptance criteria та юридично значимі описи спочатку затверджуються українською.
 - Переклади не є окремими джерелами вимог.
-- У разі будь-якої розбіжності між перекладом і українським оригіналом пріоритет має український текст.
-- Структура перекладів: `docs/i18n/<language>/...`.
+- У разі розбіжності пріоритет має український текст.
 - API error codes і domain status values залишаються стабільними технічними кодами незалежно від locale.
 
 ## Наступні ворота Architecture Freeze
 
-1. **Issue #3 — PostgreSQL physical schema review**: повний DDL design до Alembic migration #1.
-2. Issue #4 — деталізувати UX flows/wireframes на основі затвердженого Screen Catalog.
-3. Issue #5 — production topology, backup/restore і DR.
-4. Issue #6 — деталізувати i18n resources/document locale contract.
-5. Розширити acceptance suite і regulatory review для MVP.
+1. **Issue #4 — UX flows / wireframes** на основі Screen Catalog, Operational Day та API contract.
+2. **Issue #5 — production topology, backup/restore та DR**.
+3. **Issue #6 — деталізація i18n resources/document locale contract**.
+4. Regulatory/business review `MR-*` items та розширення traceability.
+5. Фінальний M0 acceptance review.
 6. Лише після M0 freeze — Alembic migration #1 та перший FastAPI module.
 
 ## Repository governance baseline
 
 - `docs/` є канонічним Obsidian Vault.
 - Основна документація у `docs/` ведеться українською.
-- Переклади зберігаються під `docs/i18n/` і мають посилатися на канонічний український документ.
-- ADR фіксують архітектурні рішення; accepted ADR не переписуються так, щоб приховати історію.
-- Стабільні Business Rule ID використовують формат `BR-*`.
-- Стабільні Acceptance Test ID використовують формат `AT-*`.
+- Переклади зберігаються під `docs/i18n/`.
+- Accepted ADR не переписуються так, щоб приховати історію.
+- Stable Business Rule ID: `BR-*`.
+- Stable Acceptance Test ID: `AT-*`.
 - Traceability matrix є частиною архітектурної документації.
 - Законодавчі джерела ведуться окремо й перевіряються перед regulatory implementation freeze.
-- GitHub Issues є task-level backlog для M0 Architecture Freeze.
-- Значні зміни документації після bootstrap проходять через branch + Pull Request.
+- GitHub Issues є task-level backlog для M0.
+- Значні зміни після bootstrap проходять через branch + Pull Request.
