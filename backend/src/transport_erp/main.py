@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from transport_erp.api.catalogs import router as catalogs_router
+from transport_erp.api.details import router as details_router
 from transport_erp.api.errors import ApiError, api_error_handler
 from transport_erp.api.fleet import router as fleet_router
 from transport_erp.api.health import router as health_router
@@ -26,6 +27,7 @@ def create_app() -> FastAPI:
     application.include_router(health_router)
     application.include_router(local_router)
     application.include_router(fleet_router)
+    application.include_router(details_router)
     application.include_router(catalogs_router)
     application.include_router(identity_router)
 
