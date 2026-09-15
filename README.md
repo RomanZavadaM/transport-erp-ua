@@ -12,7 +12,7 @@ TransportERP-UA — ERP для операційної роботи трансп�
 
 Малий парк може повноцінно працювати на одному комп’ютері без PostgreSQL/Docker/Redis/S3 та без постійного Internet.
 
-Якщо підприємству потрібен вищий рівень, локальні дані передаються на central після явного підтвердження локального оператора. Після central ACK передані records локально read-only.
+Якщо підприємству потрібен вищий рівень, локальні дані передаються на central після явного підтвердження локального оператора. До valid central ACK authority залишається `LOCAL`; після ACK authority=`CENTRAL`, а local copy стає read-only.
 
 ## Architecture baseline
 
@@ -23,8 +23,10 @@ TransportERP-UA — ERP для операційної роботи трансп�
 
 - [PROJECT_STATE.md](PROJECT_STATE.md)
 - [ARCHITECTURE_VERSION.md](ARCHITECTURE_VERSION.md)
-- [ADR-0007 Local SQLite / Central Transfer](docs/01-Architecture/ADR/ADR-0007-Local-SQLite-and-Central-Transfer.md)
+- [ADR-0007 Local Desktop / SQLite / Central Transfer](docs/01-Architecture/ADR/ADR-0007-Local-SQLite-and-Central-Transfer.md)
 - [Architecture Overview](docs/01-Architecture/Architecture-Overview.md)
+- [Local Desktop Application](docs/07-Operations/Local-Desktop-Application.md)
+- [Local SQLite Foundation — M1.5](docs/02-Data/schema/10-Local-SQLite-Foundation.md)
 - [Database Model](docs/02-Data/Database-Model.md)
 - [Deployment](docs/07-Operations/Deployment.md)
 - [Backup / DR](docs/07-Operations/Backup-and-DR.md)
