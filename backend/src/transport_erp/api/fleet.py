@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 from transport_erp.config import get_settings
 from transport_erp.local_runtime import ensure_local_storage
 
-router = APIRouter(tags=["Fleet & Drivers"])
+router = APIRouter(prefix="/api", tags=["Fleet & Drivers"])
 
 VehicleStatus = Literal["ACTIVE", "SUSPENDED", "REPAIR", "DECOMMISSIONED"]
 DriverStatus = Literal["ACTIVE", "LEAVE", "SICK", "SUSPENDED", "TERMINATED"]
