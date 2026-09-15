@@ -9,7 +9,7 @@ TransportERP-UA est un système web destiné à une entreprise de transport ukra
 
 ## Référence d’architecture
 
-Version actuelle : **v1.3**.
+Version actuelle : **v1.4**.
 
 Décisions principales :
 
@@ -24,6 +24,7 @@ Décisions principales :
 - les corrections créent de nouvelles versions au lieu de réécrire l’historique ;
 - les changements critiques d’état utilisent des commandes métier explicites ;
 - l’audit et les événements opérationnels sont append-only ;
-- PostgreSQL protège l’affectation des ressources en situation de concurrence.
+- PostgreSQL protège l’affectation des ressources en situation de concurrence ;
+- la localisation prend en charge `uk/en/es/fr/de`, l’ukrainien étant la langue par défaut et la langue canonique.
 
 La documentation canonique complète est maintenue en ukrainien dans [`/docs`](../../).
