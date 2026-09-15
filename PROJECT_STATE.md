@@ -8,6 +8,26 @@
 
 Поточний етап реалізації: **M1.5 — Audit / Outbox / Observability foundation**.
 
+## Product scope — IMPORTANT
+
+**TransportERP-UA проєктується насамперед як ERP одного автотранспортного підприємства**, а не як державна, регіональна чи multi-tenant SaaS-платформа для багатьох незалежних перевізників.
+
+Основний контур продукту:
+
+`підприємство → підрозділи/депо/колони → парк → водії → маршрути → розклад → наряди → випуск → рейси → повернення → паливо/пробіг → ТО/ремонт → документи → звітність`.
+
+Можливість кількох `company_id`, tenant-context і RLS, уже реалізована в фундаменті, **не визначає бізнес-модель продукту**. Вона може залишатися як технічний захист/резерв для філій, юридично відокремлених підрозділів або майбутнього розширення, але не повинна ускладнювати UX, процеси чи бізнес-логіку одного підприємства.
+
+Не проєктувати без окремого рішення:
+
+- державний або регіональний верхній рівень;
+- cross-company аналітику незалежних перевізників;
+- SaaS billing/tenant onboarding;
+- централізоване управління багатьма незалежними підприємствами;
+- державний data lake або галузеву платформу.
+
+Якщо будь-яка наявна архітектурна конструкція створює зайву складність для одного підприємства, її потрібно переглянути перед подальшим розвитком, а не виправдовувати потенційним SaaS/державним масштабом.
+
 ## Frozen core decisions
 
 - Modular Monolith.
@@ -21,7 +41,7 @@
 - PostgreSQL `EXCLUDE/UNIQUE/FK/CHECK` захищають critical invariants.
 - Optimistic locking + ETag/If-Match захищають від lost update.
 - Critical commands використовують idempotency.
-- Tenant isolation + RLS — частина physical design.
+- RLS/company context залишаються технічним шаром ізоляції, але продуктова ціль — одне підприємство.
 - Transactional outbox та integrity checker закладені в core.
 
 ## M0 — DONE
@@ -83,7 +103,7 @@ Implemented:
 - global `ADMIN` template role;
 - ADMIN has identity/settings/audit administration permissions but does **not** implicitly receive release/medical/technical business permissions;
 - narrow PostgreSQL `SECURITY DEFINER` company resolver for login bootstrap under RLS;
-- DB trigger rejecting cross-tenant role assignment;
+- DB trigger rejecting cross-company role assignment;
 - identity unit tests and real PostgreSQL/API acceptance tests;
 - OpenAPI contract updated for cookie session, CSRF and identity endpoints.
 
@@ -98,6 +118,8 @@ Final M1.4 CI was fully green:
 ## M1.5 — NEXT / ACTIVE
 
 GitHub Issue: **#20 — audit/outbox/observability foundation**.
+
+Before implementing M1.5, re-check each planned mechanism against the **single-enterprise product scope** and avoid SaaS/state-scale complexity that has no concrete enterprise beneficiary.
 
 Planned order:
 
