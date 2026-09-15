@@ -17,6 +17,15 @@
 - [Модель БД](02-Data/Database-Model.md)
 - [DB constraints](02-Data/Database-Constraints.md)
 
+## 03 — API
+- [OpenAPI MVP Contract](03-API/OpenAPI-MVP-Contract.md)
+- [Machine-readable OpenAPI draft](03-API/openapi-mvp-v1.yaml)
+- [DTO та schema rules](03-API/DTO-and-Schema-Rules.md)
+- [Каталог помилок](03-API/Error-Catalog.md)
+- [Permissions Catalog](03-API/Permissions-Catalog.md)
+- [Concurrency & Idempotency](03-API/Concurrency-and-Idempotency.md)
+- [Transaction Boundaries](03-API/Transaction-Boundaries.md)
+
 ## 06 — Тестування
 - [Acceptance Criteria](06-Testing/Acceptance-Criteria.md)
 - [Test Strategy](06-Testing/Test-Strategy.md)

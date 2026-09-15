@@ -1,17 +1,7 @@
-# Permissions
+# Permissions API
 
-Backend перевіряє permission, а не лише назву ролі.
+Канонічний каталог permissions перенесено до [`Permissions-Catalog.md`](Permissions-Catalog.md).
 
-Приклади permissions:
+Цей файл залишено як стабільну вхідну точку для старих посилань.
 
-- `vehicle.read`, `vehicle.update`;
-- `driver.read`, `driver.update`;
-- `trip.create`, `trip.cancel`, `trip.close`;
-- `duty.vehicle.assign`, `duty.driver.assign`;
-- `release.evaluate`, `release.authorize`;
-- `technical_check.perform`;
-- `medical_check.perform`;
-- `waybill.generate`, `waybill.issue`, `waybill.close`, `waybill.correct`;
-- `audit.read`.
-
-Administrator не отримує автоматично operational permissions тільки через технічну роль.
+Ключовий принцип: backend перевіряє **permission**, а не лише назву ролі. Технічна роль адміністратора не отримує автоматично operational permissions (`release.authorize`, `medical_check.perform`, `technical_check.perform` тощо).
