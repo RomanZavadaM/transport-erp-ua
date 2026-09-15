@@ -35,8 +35,8 @@ export default function SystemPage() {
     try {
       setError(null);
       const [statusResponse, backupsResponse] = await Promise.all([
-        fetch("/local/status", { cache: "no-store" }),
-        fetch("/local/backups", { cache: "no-store" }),
+        fetch("/api/local/status", { cache: "no-store" }),
+        fetch("/api/local/backups", { cache: "no-store" }),
       ]);
       if (!statusResponse.ok || !backupsResponse.ok) {
         throw new Error("Не вдалося отримати стан локальної системи.");
@@ -57,7 +57,7 @@ export default function SystemPage() {
       setCreatingBackup(true);
       setMessage(null);
       setError(null);
-      const response = await fetch("/local/backup", { method: "POST" });
+      const response = await fetch("/api/local/backup", { method: "POST" });
       if (!response.ok) {
         throw new Error("Не вдалося створити резервну копію.");
       }
