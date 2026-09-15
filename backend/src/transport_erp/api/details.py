@@ -4,6 +4,7 @@ import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, date, datetime
+from typing import cast
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException
@@ -178,7 +179,7 @@ def _require_vehicle(connection: sqlite3.Connection, vehicle_id: str) -> sqlite3
     ).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail="Автобус не знайдено.")
-    return row
+    return cast(sqlite3.Row, row)
 
 
 def _require_driver(connection: sqlite3.Connection, driver_id: str) -> sqlite3.Row:
@@ -191,7 +192,7 @@ def _require_driver(connection: sqlite3.Connection, driver_id: str) -> sqlite3.R
     ).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail="Водія не знайдено.")
-    return row
+    return cast(sqlite3.Row, row)
 
 
 @router.get("/vehicles/{vehicle_id}/details", response_model=VehicleDetailsResponse)
