@@ -3,7 +3,7 @@ import Link from "next/link";
 const operationalModules = [
   { title: "Автобуси", description: "Парк, стан автобусів, документи й пробіг.", href: "/vehicles/", ready: true },
   { title: "Водії", description: "Картки водіїв, документи, допуски та статус.", href: "/drivers/", ready: true },
-  { title: "Маршрути", description: "Маршрути, зупинки та розклад.", href: "#", ready: false },
+  { title: "Маршрути", description: "Маршрути та впорядковані списки зупинок.", href: "/routes/", ready: true },
   { title: "Наряди і рейси", description: "Планування роботи на день і призначення ресурсів.", href: "#", ready: false },
   { title: "Випуск на лінію", description: "Медичний, технічний контроль і дозвіл диспетчера.", href: "#", ready: false },
   { title: "Шляхові листи", description: "Формування, друк, повернення та закриття.", href: "#", ready: false },
@@ -25,9 +25,14 @@ export default function HomePage() {
           <h1>TransportERP-UA</h1>
           <p className="subtitle">Оперативна робота транспортного підприємства</p>
         </div>
-        <Link className="button secondary" href="/system/">
-          Стан системи
-        </Link>
+        <div className="page-toolbar-actions">
+          <Link className="button secondary" href="/settings/">
+            Підприємство
+          </Link>
+          <Link className="button secondary" href="/system/">
+            Стан системи
+          </Link>
+        </div>
       </header>
 
       <section className="section-block">
