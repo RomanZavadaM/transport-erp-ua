@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import zipfile
+from collections.abc import Generator
 from pathlib import Path
 
 import pytest
@@ -18,7 +19,9 @@ def _clear_runtime_caches() -> None:
 
 
 @pytest.fixture
-def local_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
+def local_client(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> Generator[TestClient, None, None]:
     monkeypatch.setenv("TRANSPORT_ERP_DEPLOYMENT_PROFILE", "local")
     monkeypatch.setenv("TRANSPORT_ERP_ENVIRONMENT", "test")
     monkeypatch.setenv("TRANSPORT_ERP_DATA_DIR", str(tmp_path / "data"))
