@@ -1,22 +1,22 @@
-# Database Model
+# Модель бази даних
 
-PostgreSQL is the transactional source of truth.
+PostgreSQL є транзакційним джерелом істини.
 
-Core tables include:
+## Основні групи таблиць
 
-- companies, depots, users, roles, permissions;
-- vehicles and vehicle_documents;
-- drivers and driver_documents;
-- stops, routes, route_versions, route_stops;
-- schedules, schedule_versions, schedule_runs;
-- trips, trip_stop_plan, trip_actuals, trip_actual_snapshots, trip_events;
-- duties, duty_trips, resource assignments and actual usage;
-- releases, pre_trip_checks, compliance evaluations and authorizations;
-- waybills, waybill_versions, waybill_trips, number_sequences;
-- files and attachments;
-- fuel operations;
-- defects, maintenance and repair orders;
-- correction_cases;
-- audit_log, outbox_events and integrity alerts.
+- організація та доступ: `companies`, `depots`, `users`, `roles`, `permissions`;
+- автобуси: `vehicles`, `vehicle_documents`, `vehicle_odometer_readings`;
+- водії: `drivers`, `driver_documents`;
+- маршрути: `stops`, `routes`, `route_versions`, `route_stops`;
+- розклад: `schedules`, `schedule_versions`, `schedule_runs`, календарі;
+- рейси: `trips`, `trip_stop_plan`, `trip_actuals`, `trip_actual_snapshots`, `trip_events`;
+- наряди: `duties`, `duty_trips`, призначення та фактичне використання ресурсів;
+- випуск: `releases`, `pre_trip_checks`, compliance evaluations, authorizations;
+- шляхові листи: `waybills`, `waybill_versions`, `waybill_trips`, `number_sequences`;
+- файли: `files`, attachments;
+- паливо: `fuel_operations`;
+- технічний стан: `defects`, maintenance, `repair_orders`;
+- корекції: `correction_cases`;
+- системна історія: `audit_log`, `outbox_events`, integrity alerts.
 
-Primary identifiers use UUIDs. Instants use `timestamptz`. Operational data is normalized; historical document/fact representations are immutable snapshots.
+Основні ідентифікатори використовують UUID. Моменти часу зберігаються як `timestamptz`. Оперативна модель нормалізована, а історичні представлення документів та фактів зберігаються як незмінні snapshots/versions.
