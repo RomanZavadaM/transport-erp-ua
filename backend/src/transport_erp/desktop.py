@@ -79,7 +79,7 @@ def main() -> None:
     _wait_until_ready(f"{base_url}/health/live")
 
     try:
-        import webview
+        import webview  # type: ignore[import-not-found]
     except ImportError as exc:
         server.should_exit = True
         raise RuntimeError(
