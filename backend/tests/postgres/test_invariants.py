@@ -193,7 +193,7 @@ def test_medical_result_is_strict_fit_or_unfit(pg: Connection[Any]) -> None:
                 """
                 INSERT INTO medical_check_details (
                     pre_trip_check_id, company_id, driver_id, fitness_result
-                ) VALUES (%s, %s, %s, 'FIT_WITH_RESTRICTIONS')
+                ) VALUES (%s, %s, %s, 'UNKNOWN')
                 """,
                 (check_id, company_id, driver_id),
             )
