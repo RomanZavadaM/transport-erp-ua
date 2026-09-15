@@ -106,3 +106,63 @@ def test_driver_create_list_and_update(local_client: TestClient) -> None:
     assert updated.status_code == 200
     assert updated.json()["employment_status"] == "LEAVE"
     assert updated.json()["row_version"] == 2
+
+
+def test_company_settings(local_client: TestClient) -> None:
+    initial = local_client.get("/api/company")
+    assert initial.status_code == 200
+
+    updated = local_client.put(
+        "/api/company",
+        json={"name": "АТП Завада", "edrpou": "12345678"},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["name"] == "АТП Завада"
+    assert updated.json()["edrpou"] == "12345678"
+
+
+def test_stops_and_ordered_route(local_client: TestClient) -> None:
+    first = local_client.post(
+        "/api/stops", json={"name": "Автовокзал", "locality": "Львів", "active": True}
+    )
+    second = local_client.post(
+        "/api/stops", json={"name": "Центр", "locality": "Львів", "active": True}
+    )
+    third = local_client.post(
+        "/api/stops", json={"name": "Залізничний вокзал", "locality": "Львів", "active": True}
+    )
+    assert first.status_code == second.status_code == third.status_code == 201
+
+    stop_ids = [first.json()["id"], second.json()["id"], third.json()["id"]]
+    created = local_client.post(
+        "/api/routes",
+        json={
+            "number": "1",
+            "name": "Автовокзал — Вокзал",
+            "active": True,
+            "stop_ids": stop_ids,
+        },
+    )
+    assert created.status_code == 201
+    assert [item["name"] for item in created.json()["stops"]] == [
+        "Автовокзал",
+        "Центр",
+        "Залізничний вокзал",
+    ]
+
+    route_id = created.json()["id"]
+    updated = local_client.put(
+        f"/api/routes/{route_id}",
+        json={
+            "number": "1",
+            "name": "Автовокзал — Вокзал",
+            "active": True,
+            "stop_ids": list(reversed(stop_ids)),
+        },
+    )
+    assert updated.status_code == 200
+    assert [item["name"] for item in updated.json()["stops"]] == [
+        "Залізничний вокзал",
+        "Центр",
+        "Автовокзал",
+    ]
