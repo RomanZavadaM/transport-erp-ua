@@ -9,7 +9,7 @@ TransportERP-UA ist ein webbasiertes System für ein ukrainisches Verkehrsuntern
 
 ## Architektur-Baseline
 
-Aktuelle Version: **v1.3**.
+Aktuelle Version: **v1.4**.
 
 Wesentliche Entscheidungen:
 
@@ -22,8 +22,9 @@ Wesentliche Entscheidungen:
 - Plan- und Ist-Daten werden getrennt gespeichert;
 - abgeschlossene Historie und Dokumentversionen sind unveränderlich;
 - Korrekturen erzeugen neue Versionen statt die Historie zu überschreiben;
-- kritische Statusänderungen verwenden explizite Geschäfts­kommandos;
+- kritische Statusänderungen verwenden explizite Geschäftskommandos;
 - Audit und operative Ereignisse sind append-only;
-- PostgreSQL schützt Ressourcenzuweisungen bei konkurrierenden Vorgängen.
+- PostgreSQL schützt Ressourcenzuweisungen bei konkurrierenden Vorgängen;
+- die Lokalisierung unterstützt `uk/en/es/fr/de`, wobei Ukrainisch Standard- und kanonische Sprache ist.
 
 Die vollständige kanonische Dokumentation wird auf Ukrainisch unter [`/docs`](../../) gepflegt.
