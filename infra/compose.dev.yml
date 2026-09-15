@@ -24,6 +24,9 @@ services:
       TRANSPORT_ERP_APP_NAME: TransportERP-UA
       TRANSPORT_ERP_ENVIRONMENT: development
       TRANSPORT_ERP_DEBUG: "false"
+      TRANSPORT_ERP_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-transport_erp}:${POSTGRES_PASSWORD:-transport_erp_dev}@db:5432/${POSTGRES_DB:-transport_erp}
+      TRANSPORT_ERP_SESSION_TTL_MINUTES: "480"
+      TRANSPORT_ERP_COOKIE_SECURE: "false"
     ports:
       - "8000:8000"
     depends_on:
