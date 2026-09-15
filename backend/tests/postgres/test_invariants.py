@@ -284,4 +284,5 @@ def test_rls_isolates_tenants_for_runtime_role(pg: Connection[Any]) -> None:
         assert vehicle_companies == {company_a}
     finally:
         pg.execute("RESET ROLE")
+        pg.execute(f'DROP OWNED BY "{role_name}"')
         pg.execute(f'DROP ROLE IF EXISTS "{role_name}"')
