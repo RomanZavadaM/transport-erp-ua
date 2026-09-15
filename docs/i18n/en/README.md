@@ -9,7 +9,7 @@ TransportERP-UA is a web system for a Ukrainian transport enterprise. It is inte
 
 ## Architecture baseline
 
-Current baseline: **v1.3**.
+Current baseline: **v1.4**.
 
 Key decisions:
 
@@ -24,6 +24,7 @@ Key decisions:
 - corrections create new versions instead of rewriting history;
 - critical state changes use explicit business commands;
 - audit and operational events are append-only;
-- PostgreSQL constraints protect resource allocation under concurrency.
+- PostgreSQL constraints protect resource allocation under concurrency;
+- localization supports `uk/en/es/fr/de`, with Ukrainian as the default and canonical locale.
 
 The full canonical documentation is maintained in Ukrainian under [`/docs`](../../).
