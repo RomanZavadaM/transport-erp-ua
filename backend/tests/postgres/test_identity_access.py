@@ -72,7 +72,7 @@ def test_identity_catalog_and_admin_template_are_seeded(
 ) -> None:
     permission_count = pg.execute("SELECT count(*) FROM permissions").fetchone()
     assert permission_count is not None
-    assert int(permission_count[0]) >= 80
+    assert cast(int, permission_count[0]) >= 80
 
     admin_permissions = {
         str(row[0])
