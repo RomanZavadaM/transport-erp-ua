@@ -38,7 +38,15 @@
   - наскрізний operational day;
   - ролі та use cases;
   - каталог MVP екранів;
-  - production Definition of Done.
+  - production Definition of Done;
+- **API Contract Package**:
+  - повний semantic endpoint catalog;
+  - DTO/schema rules;
+  - stable error catalog;
+  - permission catalog;
+  - optimistic concurrency та idempotency contract;
+  - transaction boundaries critical commands;
+  - machine-readable OpenAPI 3.1 draft для core MVP surface.
 
 ## Мовна політика
 
@@ -52,13 +60,12 @@
 
 ## Наступні ворота Architecture Freeze
 
-1. **Issue #2 — OpenAPI MVP contract**: endpoints, DTO, permissions, idempotency, concurrency/error semantics.
-2. **Issue #3 — PostgreSQL physical schema review**: повний DDL design до Alembic migration #1.
-3. Issue #4 — деталізувати UX flows/wireframes на основі затвердженого Screen Catalog.
-4. Issue #5 — production topology, backup/restore і DR.
-5. Issue #6 — деталізувати i18n resources/document locale contract.
-6. Розширити acceptance suite і regulatory review для MVP.
-7. Лише після M0 freeze — Alembic migration #1 та перший FastAPI module.
+1. **Issue #3 — PostgreSQL physical schema review**: повний DDL design до Alembic migration #1.
+2. Issue #4 — деталізувати UX flows/wireframes на основі затвердженого Screen Catalog.
+3. Issue #5 — production topology, backup/restore і DR.
+4. Issue #6 — деталізувати i18n resources/document locale contract.
+5. Розширити acceptance suite і regulatory review для MVP.
+6. Лише після M0 freeze — Alembic migration #1 та перший FastAPI module.
 
 ## Repository governance baseline
 
