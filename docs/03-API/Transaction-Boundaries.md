@@ -1,6 +1,6 @@
 # Транзакційні межі критичних API-команд
 
-Статус: **M0 draft**
+Статус: **M0 freeze candidate**
 
 Кожна critical command виконується як одна application transaction. Або всі її business effects commit-яться разом, або жоден.
 
@@ -27,6 +27,8 @@ Constraint violation → rollback → `409 VEHICLE_TIME_CONFLICT`.
 
 Аналогічна transaction з DB exclusion для driver/time.
 
+Assignment/usage segment окремо зберігає `crew_mode`; внутрішній driver role не визначає regulatory crew mode автоматично.
+
 ## 3. Replace vehicle / driver
 
 Не UPDATE старого historical assignment.
@@ -43,38 +45,68 @@ Transaction:
 - outbox;
 - commit.
 
-## 4. Complete technical check
+## 4. Complete qualified technical check
+
+`POST /releases/{id}/technical-checks`
 
 Transaction:
 
+- validate `technical_check.perform` та actor policy;
 - lock Release/subject as needed;
 - create completed check + detail + checklist results;
 - derive final result server-side;
-- якщо blocking failure → create blocking defect у тій самій transaction;
+- якщо blocking failure потребує defect evidence → create blocking defect у тій самій transaction;
 - event/audit;
 - commit.
 
-Не допускається `FAILED check` без створеного required defect через partial failure.
+Не допускається `FAILED check`, для якого required blocking defect мав бути створений, без відповідного defect через partial failure.
+
+Назва job role виконавця не є DB invariant; authorization визначається permission/qualification policy.
 
 ## 5. Complete medical check
+
+`POST /releases/{id}/medical-checks`
 
 Transaction:
 
 - validate actor/permission;
 - create check/detail;
+- result тільки `FIT` або `UNFIT`;
 - mark completed result;
 - audit;
 - commit.
 
 Completed record immutable. Invalidation є окремою command/transaction.
 
-## 6. Evaluate Release
+## 6. Complete driver pre-departure technical check
+
+`POST /releases/{id}/driver-predeparture-checks`
+
+Transaction:
+
+1. lock/read Release + Duty context;
+2. verify caller має `driver_predeparture_check.perform`;
+3. verify caller/subject відповідає assigned-driver scope або explicit authorized exception;
+4. verify vehicle/effective assignment;
+5. create `pre_trip_check` із `check_type=DRIVER_TECHNICAL_PREDEPARTURE`;
+6. create versioned checklist results;
+7. derive `PASSED/FAILED` server-side;
+8. audit/event;
+9. commit.
+
+Completed check не редагується. Помилка → invalidation + new check.
+
+Цей check не підмінює qualified `TECHNICAL` check; Release policy може вимагати обидва.
+
+## 7. Evaluate Release
 
 `POST /releases/{id}/evaluate`
 
 Transaction:
 
 - read current assignments/checks/documents/defects/repairs;
+- determine current transport/service/route context;
+- select applicable compliance rule versions by effective period/context;
 - create new `evaluation_batch_id`;
 - insert rule results;
 - derive evaluated release state (`READY/BLOCKED` where applicable);
@@ -83,7 +115,7 @@ Transaction:
 
 Старі evaluation batches не UPDATE-яться.
 
-## 7. Authorize Release
+## 8. Authorize Release
 
 `POST /releases/{id}/authorize`
 
@@ -92,39 +124,49 @@ Transaction:
 1. lock Release;
 2. lock Duty;
 3. verify `If-Match`;
-4. load effective assignments;
-5. **fresh evaluate** all blocking rules;
-6. persist evaluation batch;
-7. якщо FAIL → no authorization;
-8. ensure Waybill policy/preconditions;
-9. create unique positive authorization;
-10. set Release `AUTHORIZED`;
-11. set Duty `AUTHORIZED`;
-12. event;
-13. audit;
-14. outbox;
-15. commit.
+4. load effective vehicle/driver assignments and actual policy context;
+5. select applicable current rule versions;
+6. **fresh evaluate** all blocking rules, включно з:
+   - effective medical `FIT`;
+   - qualified technical check;
+   - driver pre-departure technical evidence;
+   - contextual driver/vehicle/carrier/route documents/evidence;
+   - blocking defects/repairs;
+   - assignment/resource conflicts;
+7. persist evaluation batch;
+8. якщо blocking FAIL → no authorization;
+9. ensure Waybill policy/preconditions where applicable;
+10. create unique positive authorization;
+11. set Release `AUTHORIZED`;
+12. set Duty `AUTHORIZED`;
+13. event;
+14. audit;
+15. outbox;
+16. commit.
 
 Жоден state не переходить в authorized до успішного завершення всіх guards.
 
-## 8. Allocate Waybill number
+## 9. Allocate Waybill number / create Waybill
 
 Одна transaction:
 
-1. lock `number_sequences` row;
-2. take `next_value`;
-3. increment sequence;
-4. construct business number;
-5. create Waybill;
-6. DB UNIQUE confirms uniqueness;
-7. audit;
-8. commit.
+1. lock Duty/Waybill policy context;
+2. validate requested/default `document_role`;
+3. for `PRIMARY`, verify no active non-cancelled PRIMARY Waybill exists;
+4. lock applicable `number_sequences` row;
+5. take `next_value`;
+6. increment sequence;
+7. construct business number;
+8. create Waybill;
+9. DB UNIQUE confirms number/PRIMARY-policy uniqueness;
+10. audit;
+11. commit.
 
 `MAX(number)+1` заборонено.
 
-Виданий/зарезервований business number не використовується повторно після business cancellation.
+Виданий/зарезервований business number не використовується повторно після business cancellation. Формат/reset sequence є enterprise policy.
 
-## 9. Generate Waybill version
+## 10. Generate Waybill version
 
 Business snapshot/version creation і job identity повинні бути consistent.
 
@@ -138,7 +180,7 @@ Recommended transaction:
 
 Worker генерує PDF idempotently для конкретного version ID. Він не створює нову business version самостійно.
 
-## 10. Duty depart
+## 11. Duty depart
 
 Transaction:
 
@@ -148,12 +190,13 @@ Transaction:
 - validate odometer;
 - append confirmed odometer reading;
 - create actual vehicle/driver usage if needed;
+- preserve crew_mode on driver usage segments;
 - set Release `USED`;
 - set Duty `ON_LINE`;
 - event/audit/outbox;
 - commit.
 
-## 11. Duty return
+## 12. Duty return
 
 Transaction:
 
@@ -166,7 +209,7 @@ Transaction:
 - event/audit/outbox;
 - commit.
 
-## 12. Trip close
+## 13. Trip close
 
 Transaction:
 
@@ -181,7 +224,7 @@ Transaction:
 
 Після commit historical snapshot не UPDATE-иться.
 
-## 13. Duty close
+## 14. Duty close
 
 Transaction:
 
@@ -194,7 +237,7 @@ Transaction:
 - audit/event/outbox;
 - commit.
 
-## 14. Waybill close
+## 15. Waybill close
 
 Transaction:
 
@@ -207,7 +250,7 @@ Transaction:
 
 PDF generation may be asynchronous, але final close semantics повинні гарантувати, що canonical final version однозначно визначена.
 
-## 15. Closed history correction
+## 16. Closed history correction
 
 Correction не reopen-ить entity.
 
@@ -231,13 +274,13 @@ Transaction застосування approved correction:
 
 Старий snapshot/version залишається.
 
-## 16. Fuel correction
+## 17. Fuel correction
 
 Historical fuel operation не UPDATE-иться.
 
 Correction transaction створює reversal + new correct operation або іншу затверджену ledger-схему, зв'язану з original record.
 
-## 17. Outbox rule
+## 18. Outbox rule
 
 Якщо business state змінився і зовнішня/async реакція важлива, outbox row вставляється **в тій самій DB transaction**.
 
@@ -245,11 +288,11 @@ Correction transaction створює reversal + new correct operation або і
 
 `commit business state → потім окремо спробувати записати event`.
 
-## 18. Audit rule
+## 19. Audit rule
 
 Critical audit entry є частиною тієї самої transaction, якщо це не суперечить спеціальному security logging design.
 
-## 19. Lock ordering
+## 20. Lock ordering
 
 Canonical lock order для operations, де потрібні кілька aggregate/resource rows:
 
@@ -257,7 +300,7 @@ Canonical lock order для operations, де потрібні кілька aggre
 
 Будь-яке відхилення має пройти concurrency review.
 
-## 20. Isolation
+## 21. Isolation
 
 Default PostgreSQL isolation: `READ COMMITTED` + explicit row locks/constraints.
 
