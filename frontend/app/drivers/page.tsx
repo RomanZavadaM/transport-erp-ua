@@ -237,9 +237,14 @@ export default function DriversPage() {
                     <td>{driver.phone ?? "—"}</td>
                     <td>{statusLabels[driver.employment_status]}</td>
                     <td>
-                      <button className="button secondary" onClick={() => edit(driver)} type="button">
-                        Редагувати
-                      </button>
+                      <div className="page-toolbar-actions">
+                        <Link className="button secondary" href={`/driver-card/?id=${driver.id}`}>
+                          Картка
+                        </Link>
+                        <button className="button secondary" onClick={() => edit(driver)} type="button">
+                          Редагувати
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
