@@ -33,6 +33,7 @@ pythonpath = ["src"]
 testpaths = ["tests"]
 markers = [
   "postgres: requires a real PostgreSQL database",
+  "sqlite: local SQLite acceptance tests",
 ]
 
 [tool.ruff]
