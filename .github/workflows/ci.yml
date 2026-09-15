@@ -57,6 +57,42 @@ jobs:
       - name: Build
         run: npm run build
 
+  openapi:
+    name: OpenAPI contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: tools/openapi/requirements.txt
+      - name: Install OpenAPI tooling
+        run: pip install -r tools/openapi/requirements.txt
+      - name: Build consolidated contract
+        run: >-
+          python tools/openapi/consolidate.py
+          --base docs/03-API/openapi-mvp-v1.yaml
+          --overlay docs/03-API/openapi-mvp-v1-freeze-overlay.yaml
+          --output .artifacts/openapi/openapi-mvp-v1.yaml
+      - name: Validate consolidated contract
+        run: python tools/openapi/validate.py .artifacts/openapi/openapi-mvp-v1.yaml
+      - name: Check committed consolidated contract freshness
+        shell: bash
+        run: |
+          if [ -f docs/03-API/openapi-mvp-v1-consolidated.yaml ]; then
+            if ! cmp --silent .artifacts/openapi/openapi-mvp-v1.yaml docs/03-API/openapi-mvp-v1-consolidated.yaml; then
+              echo "::error::Committed consolidated OpenAPI is stale"
+              diff -u docs/03-API/openapi-mvp-v1-consolidated.yaml .artifacts/openapi/openapi-mvp-v1.yaml || true
+              exit 1
+            fi
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: openapi-consolidated
+          path: .artifacts/openapi/openapi-mvp-v1.yaml
+          if-no-files-found: error
+
   compose:
     name: Compose validation
     runs-on: ubuntu-latest
