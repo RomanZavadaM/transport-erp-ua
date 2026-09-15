@@ -1,7 +1,16 @@
-# ADR-0003 — Duty Aggregate
+# ADR-0003 — Duty як окремий агрегат
 
-Status: Accepted.
+## Статус
+Прийнято.
 
-Decision: `Duty` is a separate aggregate from `Trip`.
+## Рішення
+`Duty` є окремим агрегатом і не тотожний `Trip`.
 
-Reason: one operational duty can contain multiple trips. Release and waybill workflows operate at duty level.
+## Обґрунтування
+Один виробничий наряд автобуса та екіпажу може містити кілька рейсів. Процедура випуску й шляховий лист працюють на рівні всього наряду, а не обов'язково одного рейсу.
+
+## Наслідки
+- `Release` належить `Duty`;
+- `Waybill` базово належить `Duty`;
+- один `Duty` може містити 1..N `Trip`;
+- планові призначення та фактичне використання ресурсів зберігаються окремо.
