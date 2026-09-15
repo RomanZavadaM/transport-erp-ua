@@ -2,7 +2,7 @@
 
 ## Архітектурний baseline
 
-Версія архітектури: **v1.3**
+Версія архітектури: **v1.4**
 
 Зафіксовано:
 
@@ -23,6 +23,7 @@
 - Idempotency-Key використовується для критичних повторюваних команд.
 - Outbox закладений для інтеграцій.
 - Tenant/company isolation є частиною моделі.
+- ADR-0006 зафіксував українську як канонічну мову та i18n `uk/en/es/fr/de`.
 
 ## Мовна політика
 
@@ -32,6 +33,7 @@
 - Переклади не є окремими джерелами вимог.
 - У разі будь-якої розбіжності між перекладом і українським оригіналом пріоритет має український текст.
 - Структура перекладів: `docs/i18n/<language>/...`.
+- API error codes і domain status values залишаються стабільними технічними кодами незалежно від locale.
 
 ## Наступна архітектурна робота
 
@@ -41,7 +43,8 @@
 4. ERD та PostgreSQL DDL design review.
 5. Deployment / backup / DR policy.
 6. Definition of Done та acceptance suite.
-7. Лише після freeze — Alembic migration #1 та перший FastAPI module.
+7. Regulatory review для MVP.
+8. Лише після freeze — Alembic migration #1 та перший FastAPI module.
 
 ## Repository governance baseline
 
@@ -53,3 +56,4 @@
 - Стабільні Acceptance Test ID використовують формат `AT-*`.
 - Traceability matrix є частиною архітектурної документації.
 - Законодавчі джерела ведуться окремо й перевіряються перед regulatory implementation freeze.
+- GitHub Issues є task-level backlog для M0 Architecture Freeze.
