@@ -1,0 +1,1825 @@
+openapi: 3.1.0
+info:
+  title: TransportERP-UA API
+  version: 1.0.0-m0
+  description: Машинозчитуваний контракт першого production MVP. Канонічний опис архітектури та бізнес-семантики
+    ведеться українською у docs/03-API.
+servers:
+- url: /api/v1
+security:
+- sessionAuth: []
+tags:
+- name: Auth
+- name: Vehicles
+- name: Drivers
+- name: Trips
+- name: Duties
+- name: Release
+- name: Waybills
+- name: Fuel
+- name: Maintenance
+- name: Reports
+- name: Audit
+paths:
+  /auth/me:
+    get:
+      tags:
+      - Auth
+      summary: Поточний користувач і effective permissions
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthMeResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+  /vehicles:
+    get:
+      tags:
+      - Vehicles
+      summary: Список автобусів
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VehicleListResponse'
+    post:
+      tags:
+      - Vehicles
+      summary: Створити автобус
+      x-permission: vehicle.create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VehicleCreate'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VehicleResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /vehicles/{vehicle_id}:
+    parameters:
+    - $ref: '#/components/parameters/VehicleId'
+    get:
+      tags:
+      - Vehicles
+      summary: Картка автобуса
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VehicleResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags:
+      - Vehicles
+      summary: Змінити дозволені master-data поля автобуса
+      x-permission: vehicle.update
+      parameters:
+      - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VehicleUpdate'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VehicleResponse'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /drivers:
+    get:
+      tags:
+      - Drivers
+      summary: Список водіїв
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DriverListResponse'
+    post:
+      tags:
+      - Drivers
+      summary: Створити водія
+      x-permission: driver.create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DriverCreate'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DriverResponse'
+  /trips:
+    get:
+      tags:
+      - Trips
+      summary: Список рейсів
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      - name: service_date
+        in: query
+        schema:
+          type: string
+          format: date
+      - name: status
+        in: query
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TripListResponse'
+    post:
+      tags:
+      - Trips
+      summary: Створити нерегулярний/додатковий рейс
+      x-permission: trip.create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TripCreate'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TripResponse'
+  /trips/{trip_id}:
+    parameters:
+    - $ref: '#/components/parameters/TripId'
+    get:
+      tags:
+      - Trips
+      summary: Деталі рейсу
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TripResponse'
+  /trips/{trip_id}/cancel:
+    post:
+      tags:
+      - Trips
+      summary: Скасувати рейс
+      x-permission: trip.cancel
+      parameters:
+      - $ref: '#/components/parameters/TripId'
+      - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelCommand'
+      responses:
+        '200':
+          description: Cancelled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TripResponse'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /trips/{trip_id}/depart:
+    post:
+      tags:
+      - Trips
+      summary: Зафіксувати фактичний початок рейсу
+      x-permission: trip.depart
+      parameters:
+      - $ref: '#/components/parameters/TripId'
+      - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OccurredAtCommand'
+      responses:
+        '200':
+          description: Departed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TripResponse'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /trips/{trip_id}/complete:
+    post:
+      tags:
+      - Trips
+      summary: Завершити фактичне виконання рейсу
+      x-permission: trip.complete
+      parameters:
+      - $ref: '#/components/parameters/TripId'
+      - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OccurredAtCommand'
+      responses:
+        '200':
+          description: Completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TripResponse'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /trips/{trip_id}/close:
+    post:
+      tags:
+      - Trips
+      summary: Закрити рейс та створити immutable actual snapshot
+      x-permission: trip.close
+      parameters:
+      - $ref: '#/components/parameters/TripId'
+      - $ref: '#/components/parameters/IfMatch'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Closed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TripResponse'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /duties:
+    get:
+      tags:
+      - Duties
+      summary: Список нарядів
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      - name: service_date
+        in: query
+        schema:
+          type: string
+          format: date
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DutyListResponse'
+    post:
+      tags:
+      - Duties
+      summary: Створити Duty
+      x-permission: duty.create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DutyCreate'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DutyResponse'
+  /duties/{duty_id}:
+    parameters:
+    - $ref: '#/components/parameters/DutyId'
+    get:
+      tags:
+      - Duties
+      summary: Деталі Duty
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DutyResponse'
+  /duties/{duty_id}/assign-vehicle:
+    post:
+      tags:
+      - Duties
+      summary: Призначити автобус
+      x-permission: duty.vehicle.assign
+      parameters:
+      - $ref: '#/components/parameters/DutyId'
+      - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignVehicleCommand'
+      responses:
+        '200':
+          description: Assigned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DutyResponse'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /duties/{duty_id}/assign-driver:
+    post:
+      tags:
+      - Duties
+      summary: Призначити водія
+      x-permission: duty.driver.assign
+      parameters:
+      - $ref: '#/components/parameters/DutyId'
+      - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignDriverCommand'
+      responses:
+        '200':
+          description: Assigned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DutyResponse'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /duties/{duty_id}/replace-vehicle:
+    post:
+      tags:
+      - Duties
+      summary: Контрольовано замінити автобус
+      x-permission: duty.replace_vehicle
+      parameters:
+      - $ref: '#/components/parameters/DutyId'
+      - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReplaceVehicleCommand'
+      responses:
+        '200':
+          description: Replaced
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DutyResponse'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /duties/{duty_id}/depart:
+    post:
+      tags:
+      - Duties
+      summary: Фактичний виїзд із депо
+      x-permission: duty.depart
+      parameters:
+      - $ref: '#/components/parameters/DutyId'
+      - $ref: '#/components/parameters/IfMatch'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DutyMovementCommand'
+      responses:
+        '200':
+          description: On line
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DutyResponse'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /duties/{duty_id}/return:
+    post:
+      tags:
+      - Duties
+      summary: Фактичне повернення в депо
+      x-permission: duty.return
+      parameters:
+      - $ref: '#/components/parameters/DutyId'
+      - $ref: '#/components/parameters/IfMatch'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DutyMovementCommand'
+      responses:
+        '200':
+          description: Returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DutyResponse'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /duties/{duty_id}/close:
+    post:
+      tags:
+      - Duties
+      summary: Закрити Duty
+      x-permission: duty.close
+      parameters:
+      - $ref: '#/components/parameters/DutyId'
+      - $ref: '#/components/parameters/IfMatch'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Closed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DutyResponse'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /duties/{duty_id}/release:
+    get:
+      tags:
+      - Release
+      summary: Release для Duty
+      parameters:
+      - $ref: '#/components/parameters/DutyId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReleaseResponse'
+  /releases/{release_id}/evaluate:
+    post:
+      tags:
+      - Release
+      summary: Зберегти новий batch compliance evaluation
+      x-permission: release.evaluate
+      parameters:
+      - $ref: '#/components/parameters/ReleaseId'
+      responses:
+        '200':
+          description: Evaluated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReleaseEvaluationResponse'
+  /releases/{release_id}/authorize:
+    post:
+      tags:
+      - Release
+      summary: Авторизувати випуск після fresh evaluation
+      x-permission: release.authorize
+      parameters:
+      - $ref: '#/components/parameters/ReleaseId'
+      - $ref: '#/components/parameters/IfMatch'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommentCommand'
+      responses:
+        '200':
+          description: Authorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReleaseResponse'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /releases/{release_id}/medical-checks:
+    post:
+      tags:
+      - Release
+      summary: Завершити передрейсовий медичний контроль
+      x-permission: medical_check.perform
+      parameters:
+      - $ref: '#/components/parameters/ReleaseId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MedicalCheckCreate'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckResponse'
+  /releases/{release_id}/technical-checks:
+    post:
+      tags:
+      - Release
+      summary: Завершити передрейсовий технічний контроль
+      x-permission: technical_check.perform
+      parameters:
+      - $ref: '#/components/parameters/ReleaseId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TechnicalCheckCreate'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckResponse'
+  /waybills:
+    get:
+      tags:
+      - Waybills
+      summary: Список шляхових листів
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WaybillListResponse'
+  /duties/{duty_id}/waybills:
+    post:
+      tags:
+      - Waybills
+      summary: Створити шляховий лист для Duty
+      x-permission: waybill.create
+      parameters:
+      - $ref: '#/components/parameters/DutyId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WaybillResponse'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WaybillCreate'
+  /waybills/{waybill_id}:
+    get:
+      tags:
+      - Waybills
+      summary: Деталі шляхового листа
+      parameters:
+      - $ref: '#/components/parameters/WaybillId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WaybillResponse'
+  /waybills/{waybill_id}/generate:
+    post:
+      tags:
+      - Waybills
+      summary: Створити нову document version і PDF
+      x-permission: waybill.generate
+      parameters:
+      - $ref: '#/components/parameters/WaybillId'
+      - $ref: '#/components/parameters/IfMatch'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Generated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WaybillResponse'
+  /waybills/{waybill_id}/issue:
+    post:
+      tags:
+      - Waybills
+      summary: Видати шляховий лист
+      x-permission: waybill.issue
+      parameters:
+      - $ref: '#/components/parameters/WaybillId'
+      - $ref: '#/components/parameters/IfMatch'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Issued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WaybillResponse'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /waybills/{waybill_id}/close:
+    post:
+      tags:
+      - Waybills
+      summary: Закрити шляховий лист
+      x-permission: waybill.close
+      parameters:
+      - $ref: '#/components/parameters/WaybillId'
+      - $ref: '#/components/parameters/IfMatch'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Closed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WaybillResponse'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /waybills/{waybill_id}/corrections:
+    post:
+      tags:
+      - Waybills
+      summary: Створити correction case для closed waybill
+      x-permission: waybill.correct
+      parameters:
+      - $ref: '#/components/parameters/WaybillId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CorrectionCreate'
+      responses:
+        '201':
+          description: Correction created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CorrectionResponse'
+  /fuel-operations:
+    get:
+      tags:
+      - Fuel
+      summary: Список паливних операцій
+      responses:
+        '200':
+          description: OK
+    post:
+      tags:
+      - Fuel
+      summary: Записати паливну операцію
+      x-permission: fuel.record
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FuelOperationCreate'
+      responses:
+        '201':
+          description: Created
+  /repair-orders:
+    get:
+      tags:
+      - Maintenance
+      summary: Список ремонтних нарядів
+      responses:
+        '200':
+          description: OK
+    post:
+      tags:
+      - Maintenance
+      summary: Створити ремонтний наряд
+      x-permission: repair.manage
+      responses:
+        '201':
+          description: Created
+  /reports/daily-trips:
+    get:
+      tags:
+      - Reports
+      summary: Операційний звіт рейсів за день
+      x-permission: report.operational.read
+      parameters:
+      - name: service_date
+        in: query
+        required: true
+        schema:
+          type: string
+          format: date
+      responses:
+        '200':
+          description: OK
+  /audit/entities/{entity_type}/{entity_id}:
+    get:
+      tags:
+      - Audit
+      summary: Audit timeline сутності
+      x-permission: audit.read
+      parameters:
+      - name: entity_type
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: entity_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: OK
+  /releases/{release_id}/driver-predeparture-checks:
+    get:
+      tags:
+      - Release
+      summary: Передвиїзні перевірки технічного стану, виконані водієм
+      x-permission: driver_predeparture_check.read
+      parameters:
+      - $ref: '#/components/parameters/ReleaseId'
+      responses:
+        '200':
+          description: OK
+    post:
+      tags:
+      - Release
+      summary: Зафіксувати передвиїзну перевірку технічного стану водієм
+      x-permission: driver_predeparture_check.perform
+      x-scope: assigned-driver-own-duty
+      parameters:
+      - $ref: '#/components/parameters/ReleaseId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DriverPredepartureCheckCreate'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckResponse'
+        '403':
+          description: Caller is not the assigned driver or lacks explicit permission
+  /driver-predeparture-checks/{check_id}:
+    get:
+      tags:
+      - Release
+      summary: Деталі передвиїзної перевірки водієм
+      x-permission: driver_predeparture_check.read
+      parameters:
+      - name: check_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckResponse'
+  /driver-predeparture-checks/{check_id}/invalidate:
+    post:
+      tags:
+      - Release
+      summary: Визнати completed driver pre-departure check недійсним із збереженням history
+      x-permission: driver_predeparture_check.invalidate
+      parameters:
+      - name: check_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommentCommand'
+      responses:
+        '200':
+          description: Invalidated
+components:
+  securitySchemes:
+    sessionAuth:
+      type: apiKey
+      in: cookie
+      name: session
+      description: Secure HttpOnly browser session cookie. Exact provider may evolve without changing
+        domain API.
+  parameters:
+    Page:
+      name: page
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PageSize:
+      name: page_size
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 50
+    IfMatch:
+      name: If-Match
+      in: header
+      required: true
+      schema:
+        type: string
+      description: Optimistic concurrency token / ETag.
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 200
+    VehicleId:
+      name: vehicle_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    TripId:
+      name: trip_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    DutyId:
+      name: duty_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ReleaseId:
+      name: release_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    WaybillId:
+      name: waybill_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  responses:
+    Unauthenticated:
+      description: Unauthenticated
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Entity not found in caller scope
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Conflict:
+      description: Business or concurrency conflict
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    ValidationError:
+      description: Validation error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+  schemas:
+    Meta:
+      type: object
+      required:
+      - request_id
+      properties:
+        request_id:
+          type: string
+          format: uuid
+    PageMeta:
+      allOf:
+      - $ref: '#/components/schemas/Meta'
+      - type: object
+        required:
+        - page
+        - page_size
+        - total
+        properties:
+          page:
+            type: integer
+          page_size:
+            type: integer
+          total:
+            type: integer
+    ErrorResponse:
+      type: object
+      required:
+      - error
+      - meta
+      properties:
+        error:
+          type: object
+          required:
+          - code
+          - message
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            details:
+              type: object
+              additionalProperties: true
+        meta:
+          $ref: '#/components/schemas/Meta'
+    AuthMeResponse:
+      type: object
+      required:
+      - data
+      - meta
+      properties:
+        data:
+          type: object
+          required:
+          - id
+          - username
+          - permissions
+          - locale
+          properties:
+            id:
+              type: string
+              format: uuid
+            username:
+              type: string
+            permissions:
+              type: array
+              items:
+                type: string
+            locale:
+              type: string
+              enum:
+              - uk
+              - en
+              - es
+              - fr
+              - de
+        meta:
+          $ref: '#/components/schemas/Meta'
+    VehicleCreate:
+      type: object
+      required:
+      - fleet_number
+      - registration_number
+      - make
+      - model
+      properties:
+        depot_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        fleet_number:
+          type: string
+        registration_number:
+          type: string
+        vin:
+          type:
+          - string
+          - 'null'
+        make:
+          type: string
+        model:
+          type: string
+        year:
+          type:
+          - integer
+          - 'null'
+        seats:
+          type:
+          - integer
+          - 'null'
+        capacity_total:
+          type:
+          - integer
+          - 'null'
+    VehicleUpdate:
+      type: object
+      minProperties: 1
+      properties:
+        depot_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        fleet_number:
+          type: string
+        registration_number:
+          type: string
+        make:
+          type: string
+        model:
+          type: string
+        seats:
+          type:
+          - integer
+          - 'null'
+        capacity_total:
+          type:
+          - integer
+          - 'null'
+    VehicleRead:
+      allOf:
+      - $ref: '#/components/schemas/VehicleCreate'
+      - type: object
+        required:
+        - id
+        - lifecycle_status
+        - row_version
+        properties:
+          id:
+            type: string
+            format: uuid
+          lifecycle_status:
+            type: string
+          availability:
+            type:
+            - string
+            - 'null'
+          row_version:
+            type: integer
+    VehicleResponse:
+      type: object
+      required:
+      - data
+      - meta
+      properties:
+        data:
+          $ref: '#/components/schemas/VehicleRead'
+        meta:
+          $ref: '#/components/schemas/Meta'
+    VehicleListResponse:
+      type: object
+      required:
+      - data
+      - meta
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/VehicleRead'
+        meta:
+          $ref: '#/components/schemas/PageMeta'
+    DriverCreate:
+      type: object
+      required:
+      - personnel_number
+      - last_name
+      - first_name
+      properties:
+        personnel_number:
+          type: string
+        last_name:
+          type: string
+        first_name:
+          type: string
+        middle_name:
+          type:
+          - string
+          - 'null'
+        default_depot_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+    DriverRead:
+      allOf:
+      - $ref: '#/components/schemas/DriverCreate'
+      - type: object
+        required:
+        - id
+        - employment_status
+        - row_version
+        properties:
+          id:
+            type: string
+            format: uuid
+          employment_status:
+            type: string
+          availability:
+            type:
+            - string
+            - 'null'
+          row_version:
+            type: integer
+    DriverResponse:
+      type: object
+      required:
+      - data
+      - meta
+      properties:
+        data:
+          $ref: '#/components/schemas/DriverRead'
+        meta:
+          $ref: '#/components/schemas/Meta'
+    DriverListResponse:
+      type: object
+      required:
+      - data
+      - meta
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/DriverRead'
+        meta:
+          $ref: '#/components/schemas/PageMeta'
+    TripCreate:
+      type: object
+      required:
+      - route_version_id
+      - service_date
+      - planned_departure_at
+      - planned_arrival_at
+      properties:
+        route_version_id:
+          type: string
+          format: uuid
+        service_date:
+          type: string
+          format: date
+        trip_number:
+          type:
+          - string
+          - 'null'
+        planned_departure_at:
+          type: string
+          format: date-time
+        planned_arrival_at:
+          type: string
+          format: date-time
+    TripRead:
+      type: object
+      required:
+      - id
+      - service_date
+      - status
+      - route_version_id
+      - planned_departure_at
+      - planned_arrival_at
+      - row_version
+      properties:
+        id:
+          type: string
+          format: uuid
+        trip_number:
+          type:
+          - string
+          - 'null'
+        service_date:
+          type: string
+          format: date
+        route_version_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+        planned_departure_at:
+          type: string
+          format: date-time
+        planned_arrival_at:
+          type: string
+          format: date-time
+        actual_departure_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        actual_arrival_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        row_version:
+          type: integer
+    TripResponse:
+      type: object
+      required:
+      - data
+      - meta
+      properties:
+        data:
+          $ref: '#/components/schemas/TripRead'
+        meta:
+          $ref: '#/components/schemas/Meta'
+    TripListResponse:
+      type: object
+      required:
+      - data
+      - meta
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/TripRead'
+        meta:
+          $ref: '#/components/schemas/PageMeta'
+    DutyCreate:
+      type: object
+      required:
+      - service_date
+      - planned_start_at
+      - planned_end_at
+      properties:
+        depot_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        service_date:
+          type: string
+          format: date
+        planned_start_at:
+          type: string
+          format: date-time
+        planned_end_at:
+          type: string
+          format: date-time
+        trip_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+    DutyRead:
+      type: object
+      required:
+      - id
+      - duty_number
+      - service_date
+      - status
+      - planned_start_at
+      - planned_end_at
+      - row_version
+      properties:
+        id:
+          type: string
+          format: uuid
+        duty_number:
+          type: string
+        service_date:
+          type: string
+          format: date
+        status:
+          type: string
+        planned_start_at:
+          type: string
+          format: date-time
+        planned_end_at:
+          type: string
+          format: date-time
+        row_version:
+          type: integer
+    DutyResponse:
+      type: object
+      required:
+      - data
+      - meta
+      properties:
+        data:
+          $ref: '#/components/schemas/DutyRead'
+        meta:
+          $ref: '#/components/schemas/Meta'
+    DutyListResponse:
+      type: object
+      required:
+      - data
+      - meta
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/DutyRead'
+        meta:
+          $ref: '#/components/schemas/PageMeta'
+    AssignVehicleCommand:
+      type: object
+      required:
+      - vehicle_id
+      - from
+      - to
+      properties:
+        vehicle_id:
+          type: string
+          format: uuid
+        from:
+          type: string
+          format: date-time
+        to:
+          type: string
+          format: date-time
+    AssignDriverCommand:
+      type: object
+      required:
+      - driver_id
+      - role
+      - from
+      - to
+      properties:
+        driver_id:
+          type: string
+          format: uuid
+        role:
+          type: string
+        from:
+          type: string
+          format: date-time
+        to:
+          type: string
+          format: date-time
+    ReplaceVehicleCommand:
+      type: object
+      required:
+      - old_vehicle_id
+      - new_vehicle_id
+      - effective_at
+      - reason_code
+      properties:
+        old_vehicle_id:
+          type: string
+          format: uuid
+        new_vehicle_id:
+          type: string
+          format: uuid
+        effective_at:
+          type: string
+          format: date-time
+        reason_code:
+          type: string
+        comment:
+          type:
+          - string
+          - 'null'
+    DutyMovementCommand:
+      type: object
+      required:
+      - occurred_at
+      - odometer_km
+      properties:
+        occurred_at:
+          type: string
+          format: date-time
+        odometer_km:
+          type: integer
+          minimum: 0
+        fuel_l:
+          type:
+          - number
+          - 'null'
+          minimum: 0
+    ReleaseRead:
+      type: object
+      required:
+      - id
+      - duty_id
+      - status
+      - row_version
+      properties:
+        id:
+          type: string
+          format: uuid
+        duty_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+        row_version:
+          type: integer
+    ReleaseResponse:
+      type: object
+      required:
+      - data
+      - meta
+      properties:
+        data:
+          $ref: '#/components/schemas/ReleaseRead'
+        meta:
+          $ref: '#/components/schemas/Meta'
+    ReleaseRuleResult:
+      type: object
+      required:
+      - code
+      - result
+      - blocking
+      properties:
+        code:
+          type: string
+        result:
+          type: string
+          enum:
+          - PASS
+          - FAIL
+          - WARNING
+          - NOT_APPLICABLE
+        blocking:
+          type: boolean
+        subject_type:
+          type:
+          - string
+          - 'null'
+        subject_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        details:
+          type: object
+          additionalProperties: true
+    ReleaseEvaluationResponse:
+      type: object
+      required:
+      - data
+      - meta
+      properties:
+        data:
+          type: object
+          required:
+          - release_id
+          - evaluation_batch_id
+          - status
+          - rules
+          properties:
+            release_id:
+              type: string
+              format: uuid
+            evaluation_batch_id:
+              type: string
+              format: uuid
+            status:
+              type: string
+            rules:
+              type: array
+              items:
+                $ref: '#/components/schemas/ReleaseRuleResult'
+        meta:
+          $ref: '#/components/schemas/Meta'
+    MedicalCheckCreate:
+      type: object
+      required:
+      - driver_id
+      - result
+      properties:
+        driver_id:
+          type: string
+          format: uuid
+        result:
+          type: string
+          enum:
+          - FIT
+          - UNFIT
+        valid_until:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        comment:
+          type:
+          - string
+          - 'null'
+    TechnicalCheckCreate:
+      type: object
+      required:
+      - vehicle_id
+      - odometer_km
+      - items
+      properties:
+        vehicle_id:
+          type: string
+          format: uuid
+        odometer_km:
+          type: integer
+          minimum: 0
+        items:
+          type: array
+          items:
+            type: object
+            required:
+            - template_item_id
+            - value
+            properties:
+              template_item_id:
+                type: string
+                format: uuid
+              value: {}
+              comment:
+                type:
+                - string
+                - 'null'
+        comment:
+          type:
+          - string
+          - 'null'
+    CheckResponse:
+      type: object
+      required:
+      - data
+      - meta
+      properties:
+        data:
+          type: object
+          required:
+          - id
+          - result
+          - completed_at
+          - effective
+          properties:
+            id:
+              type: string
+              format: uuid
+            result:
+              type: string
+            completed_at:
+              type: string
+              format: date-time
+            valid_until:
+              type:
+              - string
+              - 'null'
+              format: date-time
+            effective:
+              type: boolean
+        meta:
+          $ref: '#/components/schemas/Meta'
+    WaybillRead:
+      type: object
+      required:
+      - id
+      - duty_id
+      - document_role
+      - full_number
+      - status
+      - row_version
+      properties:
+        id:
+          type: string
+          format: uuid
+        duty_id:
+          type: string
+          format: uuid
+        full_number:
+          type: string
+        status:
+          type: string
+        current_version_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        issued_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        returned_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        closed_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        row_version:
+          type: integer
+        document_role:
+          type: string
+    WaybillResponse:
+      type: object
+      required:
+      - data
+      - meta
+      properties:
+        data:
+          $ref: '#/components/schemas/WaybillRead'
+        meta:
+          $ref: '#/components/schemas/Meta'
+    WaybillListResponse:
+      type: object
+      required:
+      - data
+      - meta
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/WaybillRead'
+        meta:
+          $ref: '#/components/schemas/PageMeta'
+    FuelOperationCreate:
+      type: object
+      required:
+      - vehicle_id
+      - operation_type
+      - quantity_l
+      - operation_at
+      properties:
+        vehicle_id:
+          type: string
+          format: uuid
+        duty_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        waybill_id:
+          type:
+          - string
+          - 'null'
+          format: uuid
+        operation_type:
+          type: string
+        quantity_l:
+          type: number
+          exclusiveMinimum: 0
+        odometer_km:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+        operation_at:
+          type: string
+          format: date-time
+    CorrectionCreate:
+      type: object
+      required:
+      - reason_code
+      - reason
+      properties:
+        reason_code:
+          type: string
+        reason:
+          type: string
+          minLength: 1
+    CorrectionResponse:
+      type: object
+      required:
+      - data
+      - meta
+      properties:
+        data:
+          type: object
+          required:
+          - id
+          - status
+          properties:
+            id:
+              type: string
+              format: uuid
+            status:
+              type: string
+        meta:
+          $ref: '#/components/schemas/Meta'
+    CancelCommand:
+      type: object
+      required:
+      - reason_code
+      properties:
+        reason_code:
+          type: string
+        comment:
+          type:
+          - string
+          - 'null'
+    OccurredAtCommand:
+      type: object
+      required:
+      - occurred_at
+      properties:
+        occurred_at:
+          type: string
+          format: date-time
+    CommentCommand:
+      type: object
+      properties:
+        comment:
+          type:
+          - string
+          - 'null'
+    DriverPredepartureCheckCreate:
+      type: object
+      required:
+      - vehicle_id
+      - items
+      properties:
+        vehicle_id:
+          type: string
+          format: uuid
+        odometer_km:
+          type:
+          - integer
+          - 'null'
+          minimum: 0
+        items:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required:
+            - template_item_id
+            - value
+            properties:
+              template_item_id:
+                type: string
+                format: uuid
+              value: {}
+              comment:
+                type:
+                - string
+                - 'null'
+        comment:
+          type:
+          - string
+          - 'null'
+    WaybillCreate:
+      type: object
+      properties:
+        document_role:
+          type: string
+          default: PRIMARY
+          minLength: 1
+        series:
+          type:
+          - string
+          - 'null'
+          description: Optional requested/configured series; server numbering policy remains authoritative.
