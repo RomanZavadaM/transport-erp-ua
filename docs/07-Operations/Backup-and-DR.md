@@ -1,311 +1,176 @@
-# Резервне копіювання та Disaster Recovery
+# Резервне копіювання та відновлення
 
-Статус: **M0 production baseline**
+Статус: **architecture-v1.6 baseline**
 
 ## 1. Мета
+Backup повинен дозволяти реально відновити робочий TransportERP-UA після поломки комп’ютера, диска, помилки оновлення або втрати центрального сервера.
 
-Backup policy повинна гарантувати не факт існування архіву, а можливість відновити узгоджений стан:
+Політика розділяється на:
 
-- PostgreSQL;
-- Waybill PDF та вкладення;
-- configuration metadata;
-- document templates;
-- audit evidence;
-- release/version information.
+1. Local Desktop;
+2. Central server.
 
-Backup не вважається працездатним, доки відновлення не було реально перевірене.
+Для малого АТП не вимагається серверна backup-інфраструктура.
 
-## 2. Цільові RPO / RTO для MVP
+## 2. Local Desktop — що резервуємо
 
-Початковий production baseline:
+Обов’язково:
 
-| Компонент | Target RPO | Target RTO |
-|---|---:|---:|
-| PostgreSQL transactional data | ≤ 15 хв | ≤ 4 год |
-| object storage: PDF/attachments | ≤ 1 год | ≤ 4 год |
-| application/configuration state | ≤ 24 год | ≤ 2 год |
-| audit off-site seal/evidence | ≤ 24 год | ≤ 24 год |
+- SQLite operational database;
+- документи/PDF/вкладення;
+- локальні налаштування, необхідні для відновлення;
+- transfer state/receipts;
+- application/schema version metadata.
 
-RPO/RTO є операційними цілями, а не гарантією без перевірених restore drills.
+Не потрібно резервувати перевстановлювані program binaries як єдину копію — їх можна відновити з release package.
 
-Якщо бізнес-власник встановить жорсткіші вимоги, topology/backup schedule переглядається до production launch.
+## 3. Local Desktop — практичний механізм
 
-## 3. PostgreSQL backup strategy
+Backup запускається самим застосунком.
 
-Рекомендований механізм — backup system з підтримкою:
+Підтримуються:
 
-- physical base backup;
-- continuous WAL archiving;
-- point-in-time recovery;
-- encryption;
-- S3-compatible/off-site repository;
-- backup integrity verification.
+- `Створити резервну копію зараз`;
+- простий автоматичний розклад;
+- вибір каталогу;
+- зовнішній USB-диск;
+- NAS/network share;
+- за потреби синхронізований cloud folder, якщо це дозволено політикою підприємства.
 
-Конкретний інструмент може бути `pgBackRest`, `WAL-G` або еквівалент, але backup format не повинен бути саморобним application script.
+SQLite копіюється через штатний consistent backup mechanism/application transaction, а не простим копіюванням відкритого DB-файла.
 
-### Baseline schedule
+Пакет backup містить manifest з:
 
-- continuous WAL archiving;
-- full physical backup — щотижня;
-- differential backup — щодня;
-- backup verification — автоматично після створення;
-- PITR window — щонайменше 14 днів;
-- month-end immutable/off-site copy — 12 місяців як початковий operational baseline.
+- датою/часом;
+- application version;
+- schema version;
+- node id;
+- DB checksum;
+- переліком/контролем документів.
 
-Це backup retention, а не legal retention business records.
+## 4. Просте правило для малого АТП
 
-## 4. WAL archive
+Мінімальний прийнятний варіант:
 
-WAL archive зберігається поза PostgreSQL host.
+- робочі дані на локальному диску;
+- автоматична копія на інший фізичний носій або NAS;
+- періодична перевірка restore.
 
-Вимоги:
+Другий каталог того самого фізичного диска не захищає від поломки диска.
 
-- encrypted transport;
-- encrypted at rest;
-- автоматичний alert при archive failure/lag;
-- контроль, що archive destination не заповнений;
-- періодичний restore до random point-in-time.
+## 5. Restore Local Desktop
 
-Втрата WAL archiving більше допустимого RPO повинна створювати production alert високого пріоритету.
+Restore виконується з UI застосунку або recovery mode.
 
-## 5. Off-site правило
+Послідовність:
 
-Мінімум одна backup copy повинна знаходитися в окремому failure domain від production data node.
+1. вибрати backup package;
+2. перевірити manifest/checksum;
+3. створити safety copy поточного стану, якщо він існує;
+4. закрити normal write mode;
+5. відновити SQLite та документи;
+6. перевірити schema/version;
+7. запустити integrity checks;
+8. відкрити normal mode.
 
-Не вважаються off-site backup:
+Користувач малого АТП не повинен вручну виконувати SQL-команди.
 
-- інший каталог того самого диска;
-- інший Docker volume того самого host;
-- архів на тому самому VPS;
-- snapshot єдиного VPS як єдина backup strategy.
+## 6. Backup перед оновленням
 
-## 6. Object storage backup
+Перед локальним оновленням, яке змінює схему БД, застосунок автоматично створює recovery backup.
 
-Для PDF та вкладень:
+Якщо backup створити не вдалося, небезпечне schema update не починається без явного адміністративного рішення.
 
-- primary S3-compatible storage;
-- bucket versioning;
-- регулярна off-site replication/backup;
-- object inventory;
-- SHA-256 у PostgreSQL;
-- контроль missing/orphaned objects;
-- retention/object-lock після затвердження regulatory policy.
+## 7. Передані в центр дані
 
-Ціль off-site replication для нових critical objects — не пізніше 1 години від створення.
+Central ACK не заміняє локальний backup.
 
-Для фінальних Waybill PDF бажано копіювати object у backup destination асинхронно одразу після успішного запису primary object.
+Локальна read-only копія переданих даних зберігається та входить у backup відповідно до retention policy.
 
-## 7. Узгодженість PostgreSQL ↔ Object Storage
+Central також має власний backup.
 
-DB backup і file backup не є повністю atomic між двома системами.
+## 8. Central server
 
-Тому integrity checker повинен знаходити:
+Для центрального рівня з PostgreSQL використовуються звичайні server-grade механізми:
 
-- DB record → object відсутній;
-- object → metadata record відсутній;
-- SHA-256 mismatch;
-- CLOSED Waybill без final PDF;
-- `waybill_version` без доступного immutable object.
+- PostgreSQL backup tooling;
+- за потреби WAL/PITR;
+- backup server documents/object storage;
+- off-site copy;
+- restore verification.
 
-Під час DR допускається, що DB відновлена до точки, для якої деякі пізніші object versions вже існують. Такі objects не видаляються автоматично; вони класифікуються як orphan candidates для review.
+Конкретні RPO/RTO визначаються масштабом підприємства і не нав’язуються малому Local Desktop deployment.
 
-## 8. Configuration та secrets backup
+## 9. Central PostgreSQL backup
 
-Backup configuration розділяється на:
+Для значущого production central рекомендуються `pgBackRest`, `WAL-G` або еквівалентне перевірене рішення.
 
-### Versioned, non-secret
+Можливі:
 
-У Git:
+- regular full/incremental backup;
+- WAL archiving/PITR;
+- encrypted off-site repository;
+- automated verification.
 
-- Compose templates;
-- reverse-proxy config templates;
-- migration code;
-- environment variable names/examples;
-- monitoring rules;
-- runbooks.
+Це вимога центрального серверного профілю, а не локального desktop.
 
-### Secret material
+## 10. Файли
 
-Поза Git:
+Local Desktop використовує filesystem managed application directory.
 
-- production passwords;
-- private keys;
-- JWT/session signing material;
-- object-storage credentials;
-- backup repository credentials.
+Central може використовувати filesystem, NAS або S3-compatible storage залежно від масштабу.
 
-Secrets backup має бути encrypted і доступний лише обмеженому recovery role.
+Для важливих immutable документів бажано зберігати SHA-256 у БД незалежно від фізичного storage backend.
 
-## 9. Restore environments
+## 11. Перевірка відновлення
 
-Відновлення ніколи вперше не тестується на production.
+Backup не вважається достатнім, якщо жодного разу не перевірено restore.
 
-Має існувати temporary restore environment, у якому можна:
+Для малого вузла достатній простий контрольований тест відновлення на резервний каталог/тестову копію.
 
-1. розгорнути clean PostgreSQL;
-2. відновити base/differential backup;
-3. replay WAL до потрібної точки;
-4. підключити копію/restore object storage;
-5. запустити schema/integrity checks;
-6. виконати application smoke tests.
+Для central server restore drills мають бути регулярнішими та формалізованими відповідно до ризику.
 
-## 10. Restore drill cadence
+## 12. Аварійні сценарії Local Desktop
 
-Мінімальний baseline:
+### LD-01 — зламався застосунок, дані цілі
+Перевстановити application package, підключити/знайти application data, перевірити DB migration/version.
 
-- автоматичний backup verification — кожен backup cycle;
-- PostgreSQL restore drill — щомісяця;
-- object restore sample — щомісяця;
-- full disaster recovery exercise — щокварталу;
-- обов'язковий full restore test перед першим production launch.
+### LD-02 — зламався диск/комп’ютер
+Встановити TransportERP-UA на replacement PC → `Відновити з резервної копії` → перевірити integrity → продовжити роботу.
 
-Restore drill має створювати evidence/report:
+### LD-03 — невдале оновлення
+Запустити recovery mode → відновити automatic pre-update backup → повернути сумісну application version.
 
-- дата;
-- backup set;
-- target point-in-time;
-- фактичний restore duration;
-- integrity results;
-- smoke-test results;
-- виявлені проблеми;
-- відповідальний.
+### LD-04 — пошкоджена SQLite
+Не редагувати DB вручну як перший крок. Зупинити normal writes, зробити forensic/safety copy, перевірити SQLite integrity, за потреби відновити останній valid backup.
 
-## 11. DR scenarios
+### LD-05 — central недоступний
+Локальна робота з даними у стані `LOCAL` продовжується. Pending transfers залишаються pending; дані не блокуються без ACK.
 
-### DR-01 — Application node lost
+## 13. Аварійні сценарії Central
 
-Очікування:
+Central outage не повинен робити Local Desktop непрацездатним для локально authoritative даних.
 
-- PostgreSQL/object storage intact;
-- підняти replacement application node;
-- deploy pinned release images;
-- restore configuration/secrets;
-- connect to data services;
-- readiness + smoke tests.
+Після відновлення central transfer client продовжує підтверджені, але не завершені передачі idempotently.
 
-Ціль: RTO ≤ 2 години.
+## 14. Production readiness
 
-### DR-02 — Data node lost, off-site backups intact
+### Local Desktop
+Перед запуском перевірити:
 
-1. provision replacement data node;
-2. restore PostgreSQL latest valid backup;
-3. replay WAL до вибраної point-in-time;
-4. restore/connect object storage;
-5. run integrity checker;
-6. open system in maintenance/read-only mode for verification;
-7. smoke tests;
-8. reopen writes.
+- backup кнопкою;
+- scheduled backup;
+- restore;
+- backup на інший носій;
+- pre-update backup;
+- recovery після OS restart;
+- recovery після interrupted transfer.
 
-Ціль: RTO ≤ 4 години, DB RPO ≤ 15 хвилин.
+### Central
+Додатково:
 
-### DR-03 — Accidental logical corruption
-
-Приклади:
-
-- faulty deployment;
-- unintended bulk write;
-- operator mistake.
-
-Не відновлюємо production DB поверх себе одразу.
-
-Спочатку:
-
-1. stop/limit writes;
-2. determine corruption time;
-3. restore temporary DB to candidate PITR point;
-4. validate business data;
-5. choose recovery strategy: correction, selective recovery або full PITR cutover;
-6. record incident/audit.
-
-### DR-04 — Object storage corruption/deletion
-
-1. disable destructive automation;
-2. identify affected objects;
-3. compare inventory/hash;
-4. restore previous object versions/off-site copies;
-5. run DB↔object integrity checker.
-
-### DR-05 — Credential compromise
-
-1. revoke/rotate compromised credentials;
-2. invalidate sessions/tokens where required;
-3. rotate dependent credentials;
-4. inspect audit/security logs;
-5. verify backup credentials separately;
-6. preserve forensic evidence.
-
-### DR-06 — Total site/provider loss
-
-Recovery uses:
-
-- Git/release metadata;
-- off-site database backup + WAL;
-- off-site object backup;
-- encrypted recovery secrets;
-- documented infrastructure/runbooks.
-
-Production host snapshots alone не є достатніми.
-
-## 12. Recovery modes
-
-Система повинна підтримувати operationally:
-
-- normal read/write;
-- maintenance mode;
-- read-only/recovery verification mode.
-
-Після DR пишучий режим не вмикається до завершення мінімального integrity checklist.
-
-## 13. Post-restore integrity checklist
-
-Обов'язково перевірити:
-
-- schema/Alembic revision;
-- tenant counts;
-- users/roles basic integrity;
-- CLOSED trips with snapshots;
-- Waybill/version/PDF availability;
-- release authorizations;
-- audit continuity;
-- outbox state;
-- object hashes/sample;
-- number sequences;
-- newest odometer readings;
-- backup configuration itself.
-
-## 14. Backup monitoring
-
-Alerts:
-
-- backup missed;
-- backup failed;
-- WAL archive delay;
-- restore verification failed;
-- repository capacity threshold;
-- object replication lag;
-- last successful restore drill expired.
-
-Dashboard має показувати не тільки last backup, а також **last successful restore test**.
-
-## 15. Відповідальність
-
-До production launch мають бути визначені ролі:
-
-- incident commander;
-- infrastructure operator;
-- database recovery operator;
-- application verifier;
-- business owner, який дозволяє відновлення write operations.
-
-Одна людина може виконувати декілька ролей у невеликому підприємстві, але ролі мають бути явно визначені.
-
-## 16. Правило production readiness
-
-Production запуск заборонений, якщо:
-
-- off-site backup не налаштований;
-- WAL archiving не перевірений;
-- object backup не перевірений;
-- recovery secrets недоступні за documented procedure;
-- не виконано full restore drill;
-- measured restore time не вкладається в погоджений RTO без прийнятого risk exception.
+- PostgreSQL backup/restore;
+- server storage restore;
+- off-site copy;
+- transfer receipt/ACK recovery;
+- monitoring backup failures.
