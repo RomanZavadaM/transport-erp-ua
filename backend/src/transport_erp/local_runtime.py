@@ -6,6 +6,7 @@ import zipfile
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from uuid import uuid4
 
 from transport_erp.config import Settings
 
@@ -39,17 +40,75 @@ def ensure_local_storage(settings: Settings) -> None:
         connection.execute("PRAGMA journal_mode=WAL")
         connection.execute("PRAGMA synchronous=FULL")
         connection.execute("PRAGMA busy_timeout=5000")
-        connection.execute(
+        connection.executescript(
             """
             CREATE TABLE IF NOT EXISTS app_meta (
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
-            )
+            );
+
+            CREATE TABLE IF NOT EXISTS companies (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                edrpou TEXT,
+                status TEXT NOT NULL DEFAULT 'ACTIVE'
+                    CHECK (status IN ('ACTIVE', 'SUSPENDED'))
+            );
+
+            CREATE TABLE IF NOT EXISTS vehicles (
+                id TEXT PRIMARY KEY,
+                company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE RESTRICT,
+                fleet_number TEXT NOT NULL,
+                registration_number TEXT NOT NULL,
+                vin TEXT,
+                make TEXT NOT NULL,
+                model TEXT NOT NULL,
+                year INTEGER CHECK (year IS NULL OR year BETWEEN 1950 AND 2100),
+                lifecycle_status TEXT NOT NULL DEFAULT 'ACTIVE'
+                    CHECK (lifecycle_status IN ('ACTIVE','SUSPENDED','REPAIR','DECOMMISSIONED')),
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                row_version INTEGER NOT NULL DEFAULT 1,
+                UNIQUE(company_id, fleet_number),
+                UNIQUE(company_id, registration_number),
+                UNIQUE(vin)
+            );
+
+            CREATE TABLE IF NOT EXISTS drivers (
+                id TEXT PRIMARY KEY,
+                company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE RESTRICT,
+                personnel_number TEXT NOT NULL,
+                last_name TEXT NOT NULL,
+                first_name TEXT NOT NULL,
+                middle_name TEXT,
+                phone TEXT,
+                employment_status TEXT NOT NULL DEFAULT 'ACTIVE'
+                    CHECK (employment_status IN ('ACTIVE','LEAVE','SICK','SUSPENDED','TERMINATED')),
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                row_version INTEGER NOT NULL DEFAULT 1,
+                UNIQUE(company_id, personnel_number)
+            );
             """
         )
         connection.execute(
             "INSERT OR IGNORE INTO app_meta(key, value) VALUES ('storage_profile', 'local-sqlite')"
         )
+
+        company_id_row = connection.execute(
+            "SELECT value FROM app_meta WHERE key = 'company_id'"
+        ).fetchone()
+        if company_id_row is None:
+            company_id = str(uuid4())
+            connection.execute(
+                "INSERT INTO companies(id, name, status) VALUES (?, ?, 'ACTIVE')",
+                (company_id, "Транспортне підприємство"),
+            )
+            connection.execute(
+                "INSERT INTO app_meta(key, value) VALUES ('company_id', ?)",
+                (company_id,),
+            )
+
         connection.commit()
 
 
