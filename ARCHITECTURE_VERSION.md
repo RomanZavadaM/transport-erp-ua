@@ -1,7 +1,9 @@
-# Architecture Version
+# Версія архітектури
 
-Current baseline: **architecture-v1.3**
+Поточний baseline: **architecture-v1.3**
 
-Status: **Design / pre-implementation**
+Статус: **проєктування / до початку реалізації**
 
-Architecture freeze is not complete. The baseline may evolve through ADRs until M0 is closed.
+Architecture Freeze ще не завершено. До закриття milestone `M0 — Architecture Freeze` baseline може розвиватися через нові ADR та контрольовані зміни документації.
+
+Канонічна мова цієї специфікації — українська. Переклади є похідними й не змінюють зміст baseline.
