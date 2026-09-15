@@ -1,259 +1,216 @@
-# Production Deployment — базова топологія
+# Production Deployment — практичні профілі
 
-Статус: **M0 production baseline**
+Статус: **architecture-v1.6 baseline**
 
 Канонічна мова документа — українська.
 
-## 1. Принцип
+## 1. Основний принцип
+TransportERP-UA має запускатися від найпростішого реального сценарію: **один комп’ютер, один встановлюваний застосунок, SQLite, локальні документи**.
 
-Перший production deployment не використовує Kubernetes. Базовий runtime — **Linux + Docker Compose**, але production не будується як один сервер із усіма компонентами та резервними копіями на тому самому диску.
+Центральний сервер, PostgreSQL, Docker, Redis, S3 та багатовузлова інфраструктура не є умовою production-використання малого АТП.
 
-Мінімальний production baseline має щонайменше три failure domains:
+## 2. Профіль A — Local Desktop
 
-1. application node;
-2. data node;
-3. off-site backup/object-storage target, який не залежить від двох попередніх вузлів.
-
-## 2. Рекомендована топологія MVP
+Це повноцінний production-профіль для малого підприємства або автономного локального підрозділу.
 
 ```text
-Internet / Corporate network
-          |
-          v
-+-----------------------------+
-| Application node            |
-|-----------------------------|
-| Reverse proxy / TLS         |
-| Next.js frontend            |
-| FastAPI API                 |
-| background worker           |
-| Redis*                      |
-+--------------+--------------+
-               |
-        private network
-               |
-+--------------v--------------+
-| Data node                   |
-|-----------------------------|
-| PostgreSQL                  |
-| S3-compatible object store* |
-| local backup staging        |
-+--------------+--------------+
-               |
-       encrypted transfer
-               |
-+--------------v--------------+
-| Off-site storage            |
-|-----------------------------|
-| PostgreSQL backup repo      |
-| WAL archive                 |
-| object-store replica/backup |
-| sealed audit evidence       |
-+-----------------------------+
++--------------------------------------+
+| Комп’ютер користувача                |
+|--------------------------------------|
+| TransportERP-UA desktop application  |
+| local backend                        |
+| SQLite                               |
+| managed documents directory          |
+| backup/restore                       |
+| transfer/sync client                 |
++--------------------------------------+
 ```
 
-`*` Redis і локальний object storage не є джерелом бізнес-цілісності. Якщо доступний надійний зовнішній S3-compatible storage, він є кращим за MinIO на data node для фінальних PDF і вкладень.
+Користувач:
 
-## 3. Application node
+1. встановлює TransportERP-UA;
+2. запускає програму з ярлика;
+3. працює у вікні застосунку;
+4. не запускає PostgreSQL/Docker вручну;
+5. не відкриває `localhost` у браузері;
+6. налаштовує каталог резервних копій через сам застосунок.
 
-Application node виконує лише application/runtime функції:
+Внутрішні backend/WebView/service processes запускаються та зупиняються самим застосунком.
 
-- reverse proxy;
-- HTTPS termination;
-- frontend;
-- FastAPI API;
-- background worker;
-- optional Redis;
-- metrics/log shipping agents.
+## 3. Локальні файли
 
-На application node **не зберігається єдина копія**:
+SQLite DB та документи зберігаються у керованих застосунком каталогах ОС.
 
-- PostgreSQL data directory;
-- Waybill PDF;
-- вкладень;
-- резервних копій;
-- secrets backup.
+Не використовувати поточний робочий каталог програми або випадкові шляхи.
 
-Контейнери application layer повинні бути disposable: після втрати вузла систему можна відновити з image/version + configuration + data services.
+Застосунок повинен мати:
 
-## 4. Data node
+- визначений application data directory;
+- окремий documents directory;
+- окремий backup destination;
+- кнопку/екран відкриття місця зберігання для адміністратора;
+- перевірку вільного місця;
+- safe shutdown перед технічними операціями з БД.
 
-Data node ізольований від прямого Internet access.
+## 4. Backup Local Desktop
 
-Дозволені network flows повинні бути мінімальними:
+Мінімально підтримуються:
 
-- PostgreSQL — тільки з application/administration network;
-- object storage — тільки з application/backup services;
-- SSH/administration — тільки з trusted administration network/VPN;
-- backup transfer — тільки до визначеного off-site target.
+- ручний backup кнопкою;
+- автоматичний backup за простим розкладом;
+- вибір каталогу, зовнішнього USB-диска або NAS;
+- backup SQLite через безпечний backup mechanism, а не копіювання відкритого файла навмання;
+- включення документів/вкладень;
+- перевірка backup manifest/checksum;
+- restore через сам застосунок.
 
-PostgreSQL не публікується у public Internet.
+Для малого АТП backup на зовнішній диск є нормальним підтримуваним сценарієм.
 
-## 5. Reverse proxy / TLS
+## 5. Профіль B — Local + Central
 
-Production підтримує тільки HTTPS.
+Якщо підприємству потрібен вищий рівень:
 
-Reverse proxy відповідає за:
+```text
+Local TransportERP-UA
+SQLite
+   |
+   | оператор підтвердив передачу
+   v
+Central TransportERP-UA
+PostgreSQL
+```
 
-- TLS termination;
-- HTTP → HTTPS redirect;
-- security headers;
-- request/body size limits;
-- rate limiting для selected public endpoints;
-- access logging без secrets;
-- проксіювання frontend/API;
-- connection/timeouts policy.
+Центральний рівень не потрібен для продовження локальної роботи з даними, які ще не передані.
 
-HSTS вмикається після перевірки production HTTPS/domain setup.
+Після central ACK передані дані локально стають read-only.
 
-## 6. Docker Compose
+## 6. Кілька локальних вузлів
 
-Production Compose поділяється щонайменше на:
+Велике підприємство може мати кілька локальних вузлів:
 
-- application services;
-- data/backup services;
-- monitoring agents.
+```text
+Local A (SQLite) --\
+Local B (SQLite) ----> Central (PostgreSQL)
+Local C (SQLite) --/
+```
 
-Production Compose файли не містять secrets у plaintext.
+Кожний локальний вузол залишається тим самим застосунком. Не потрібна окрема edition або інша локальна БД.
 
-Images використовують immutable release tags/digests. Production не розгортається з `latest`.
+## 7. Центральний рівень
 
-## 7. Release artifact
+Центральний deployment може бути простим або розділеним залежно від фактичного навантаження.
 
-Кожний production release повинен бути ідентифікований:
+Початково допустимо:
 
-- Git commit SHA;
-- release/version tag;
-- container image digest;
-- DB migration revision;
-- OpenAPI contract version;
-- document-template versions.
+```text
+Central server
+- API
+- PostgreSQL
+- documents storage
+- backup
+```
 
-Ці значення повинні бути доступні в internal system/version endpoint або deployment metadata.
+Лише коли є реальна потреба, компоненти розносяться на окремі вузли.
 
-## 8. Deployment sequence
+Kubernetes не є milestone і не потрібен без доведеної потреби.
 
-Базовий порядок release:
+## 8. PostgreSQL
 
-1. перевірити backup/restore readiness;
-2. перевірити schema migration compatibility;
-3. pull immutable images;
-4. виконати backward-compatible migrations;
-5. запустити/оновити API + worker;
-6. оновити frontend;
-7. readiness checks;
-8. smoke tests ключового operational flow;
-9. зафіксувати deployment event/version.
+PostgreSQL є серверною/центральною технологією, а не локальною обов’язковою залежністю.
 
-Небезпечні destructive migrations не виконуються одночасно з application release без expand/migrate/contract procedure.
+На центральному рівні застосовуються:
 
-## 9. Environments
+- server-side transactions;
+- FK/UNIQUE/CHECK;
+- RLS де воно реально потрібне;
+- exclusion constraints;
+- row locks;
+- server backup tooling.
 
-Мінімально існують:
+## 9. Redis
 
-- `development`;
-- `test/CI`;
-- `staging`;
-- `production`.
+Redis не є обов’язковим компонентом.
 
-Production data не копіюється у development/staging без контрольованої анонімізації.
+Його можна додати центральному deployment лише для конкретної потреби: cache, queue або rate limiting.
 
-Staging має бути максимально близьким до production за:
+## 10. Object storage
 
-- PostgreSQL major version;
-- reverse proxy;
-- Compose topology;
-- migrations;
-- object-storage API;
-- locale/document generation;
-- backup restore procedure.
+S3-compatible storage не є обов’язковим.
 
-## 10. Network segmentation
+Local Desktop використовує файловий каталог.
 
-Логічно виділяються:
+Central може почати зі звичайного керованого server filesystem і перейти на S3-compatible storage, якщо обсяг/надійність/масштаб це виправдають.
 
-- public/edge network;
-- application private network;
-- data network;
-- administration network;
-- backup destination.
+Бізнес-код працює через абстракцію file storage, а не напряму залежить від S3.
 
-Доступ між сегментами дозволяється explicit allow-list правилами.
+## 11. Desktop packaging
 
-## 11. SSH та адміністративний доступ
+Local Desktop повинен постачатися як інсталятор/пакет застосунку.
 
-Рекомендовано:
+Вимоги до пакета:
 
-- key-based authentication;
-- password SSH login disabled;
-- root login disabled;
-- окремі named administrator accounts;
-- MFA/VPN/bastion там, де це доступно;
-- журналювання адміністративних входів;
-- регулярна ротація доступів після зміни персоналу.
+- один зрозумілий installer;
+- створення ярлика;
+- автоматичне створення application-data каталогів;
+- автоматична ініціалізація SQLite;
+- schema migration при оновленні;
+- rollback/recovery strategy для невдалого оновлення;
+- version/build information у UI;
+- uninstall не повинен мовчки видаляти production data.
 
-## 12. PostgreSQL connection policy
+Конкретний desktop shell/package technology перевіряється implementation spike; користувацька модель від неї не залежить.
 
-FastAPI не використовує database superuser.
+## 12. Оновлення локального застосунку
 
-Окремі DB roles:
+Перед schema-changing update:
 
-- migration role;
-- application runtime role;
-- reporting/read-only role;
-- backup role.
+1. створити локальний recovery backup;
+2. закрити write operations;
+3. встановити нову версію;
+4. виконати SQLite migration;
+5. перевірити schema/application startup;
+6. лише після успіху відкрити normal mode.
 
-Connection pool має верхню межу; кількість connections не масштабується безконтрольно разом із web workers.
+Автооновлення не повинно непомітно ризикувати робочою БД.
 
-## 13. Object storage
+## 13. Мережа
 
-Файли зберігаються поза container filesystem.
+Local Desktop без central може працювати без Internet.
 
-Для Waybill PDF та історично важливих документів рекомендовані:
+Для передачі на central потрібен лише outbound connection до визначеного HTTPS endpoint.
 
-- bucket versioning;
-- encryption at rest;
-- SHA-256 metadata у PostgreSQL;
-- off-site replication/backup;
-- retention/object-lock після юридичного підтвердження policy.
+Не потрібно відкривати SQLite file або DB port у мережу.
 
-## 14. Redis
+## 14. Production readiness для Local Desktop
 
-Redis може використовуватися для:
+Локальний вузол готовий до production, якщо перевірені:
 
-- short-lived cache;
-- rate limiting;
-- job queue;
-- transient synchronization.
+- clean install;
+- first-run DB initialization;
+- звичайний restart;
+- OS restart;
+- backup;
+- restore;
+- application update + DB migration;
+- робота без Internet;
+- відновлення після невдалої передачі;
+- блокування редагування після central ACK;
+- достатньо місця на диску.
 
-Redis **не може бути єдиним джерелом**:
+## 15. Production readiness для Central
 
-- business status;
-- assignment;
-- idempotency truth для фінальних critical commands, якщо їх втрата порушить consistency;
-- audit;
-- document numbering.
+Додатково перевіряються:
 
-## 15. Single-host fallback
+- PostgreSQL backup/restore;
+- HTTPS;
+- central storage backup;
+- приймання transfer batches;
+- idempotent ACK;
+- повернення центральних read-only updates локальним вузлам;
+- monitoring відповідно до реального масштабу.
 
-Для тимчасового pilot deployment допускається один production host лише якщо:
+## 16. Принцип масштабування
 
-- PostgreSQL і object storage мають незалежний off-site backup;
-- WAL archiving працює поза цим host;
-- restore drill перевірений;
-- application і data volumes розділені;
-- цей режим формально позначений як `pilot`, а не target production topology.
+Спочатку — найпростіша конфігурація, яка надійно виконує роботу.
 
-Це не є цільовою архітектурою після стабілізації MVP.
-
-## 16. Масштабування
-
-Перші кроки масштабування без переходу на Kubernetes:
-
-1. окремий PostgreSQL node;
-2. кілька API containers за reverse proxy;
-3. окремі worker instances;
-4. external S3-compatible object storage;
-5. read replica для важких reports — лише коли profiling доведе потребу.
-
-Перехід на Kubernetes не є milestone сам по собі і розглядається лише при реальній операційній потребі.
+Ускладнення інфраструктури дозволяється лише при конкретній причині: кількість користувачів, обсяг даних, performance, availability або централізація.
