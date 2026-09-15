@@ -1,13 +1,13 @@
-# ADR-0002-PostgreSQL-Source-of-Truth
+# ADR-0002 — PostgreSQL як транзакційне джерело істини
 
-## Status
-Accepted
+## Статус
+Прийнято.
 
-## Decision
-PostgreSQL is the transactional source of truth and enforces critical invariants in addition to application-layer validation.
+## Рішення
+PostgreSQL є транзакційним джерелом істини та самостійно забезпечує критичні інваріанти на додаток до перевірок у backend.
 
-## Rationale
-Concurrent dispatcher operations require guarantees stronger than UI or application checks alone.
+## Обґрунтування
+Одночасна робота кількох диспетчерів потребує гарантій, сильніших за перевірки UI чи Python-коду. Фундаментальні суперечності повинні блокуватися самою БД.
 
-## Consequences
-Critical constraints use PostgreSQL features such as foreign keys, unique constraints, range types, exclusion constraints and row locking.
+## Наслідки
+Використовуємо FK, UNIQUE, CHECK, range types, GiST exclusion constraints, row locks, optimistic locking і транзакції. Redis або frontend ніколи не є остаточним гарантом бізнес-цілісності.
