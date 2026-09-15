@@ -89,6 +89,32 @@ def ensure_local_storage(settings: Settings) -> None:
                 row_version INTEGER NOT NULL DEFAULT 1,
                 UNIQUE(company_id, personnel_number)
             );
+
+            CREATE TABLE IF NOT EXISTS stops (
+                id TEXT PRIMARY KEY,
+                company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE RESTRICT,
+                name TEXT NOT NULL,
+                locality TEXT,
+                active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+                UNIQUE(company_id, name, locality)
+            );
+
+            CREATE TABLE IF NOT EXISTS routes (
+                id TEXT PRIMARY KEY,
+                company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE RESTRICT,
+                number TEXT NOT NULL,
+                name TEXT NOT NULL,
+                active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+                UNIQUE(company_id, number)
+            );
+
+            CREATE TABLE IF NOT EXISTS route_stops (
+                route_id TEXT NOT NULL REFERENCES routes(id) ON DELETE CASCADE,
+                stop_id TEXT NOT NULL REFERENCES stops(id) ON DELETE RESTRICT,
+                position INTEGER NOT NULL CHECK (position >= 1),
+                PRIMARY KEY (route_id, position),
+                UNIQUE(route_id, stop_id)
+            );
             """
         )
         connection.execute(
@@ -115,7 +141,8 @@ def ensure_local_storage(settings: Settings) -> None:
 def get_local_status(settings: Settings) -> LocalRuntimeStatus:
     ensure_local_storage(settings)
     with sqlite3.connect(settings.local_database_path) as connection:
-        integrity = str(connection.execute("PRAGMA integrity_check").fetchone()[0])
+        row = connection.execute("PRAGMA integrity_check").fetchone()
+        integrity = str(row[0]) if row is not None else "unknown"
 
     return LocalRuntimeStatus(
         database_path=settings.local_database_path,
