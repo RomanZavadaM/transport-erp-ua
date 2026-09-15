@@ -4,16 +4,19 @@
 
 Кожна critical command виконується як одна application transaction: або всі business effects commit-яться разом, або жоден.
 
-## 0. Local/Central authority guard
+## 0. Local authority + transfer-lock guard
 
-Перед будь-якою business mutation local backend перевіряє authority даних.
+Перед будь-якою business mutation local backend перевіряє дві окремі речі:
 
-- `LOCAL` — mutation дозволена за звичайними permission/state rules;
-- `CENTRAL` — local mutation заборонена, повертається стабільна помилка на кшталт `409 RECORD_MANAGED_CENTRALLY`;
-- `PENDING_APPROVAL` — редагування допускається лише якщо воно скасовує/переформовує pending package та вимагає нового approval;
-- `TRANSFERRING` — business mutation блокується до ACK або завершення/скасування невдалої передачі.
+1. **Authority**:
+   - `LOCAL` — local mutation може бути дозволена за звичайними permission/state rules;
+   - `CENTRAL` — local mutation заборонена, повертається стабільна помилка на кшталт `409 RECORD_MANAGED_CENTRALLY`.
+2. **Temporary transfer lock**:
+   - якщо record включений у вже схвалений активний transfer batch, ordinary business mutation тимчасово блокується, щоб approved payload не змінився під час доставки.
 
-Це backend rule. UI лише відображає read-only state.
+`PENDING_APPROVAL`, `TRANSFERRING`, `FAILED` — це transfer-batch statuses, а не authority states. До verified central ACK authority залишається `LOCAL`.
+
+UI лише відображає ці правила; гарантія знаходиться в backend.
 
 ## 1. Physical transaction profile
 
@@ -33,7 +36,7 @@
 
 Transaction:
 
-1. authority guard;
+1. authority/transfer-lock guard;
 2. load current Duty state;
 3. verify vehicle lifecycle/context;
 4. re-check overlapping assignment;
@@ -51,7 +54,7 @@ Central PostgreSQL може додатково мати exclusion constraint.
 
 Аналогічно vehicle assignment:
 
-- authority guard;
+- authority/transfer-lock guard;
 - current-state/permission validation;
 - overlap check inside write transaction;
 - insert assignment;
@@ -66,7 +69,7 @@ Central PostgreSQL може додатково мати exclusion constraint.
 
 Transaction:
 
-- authority guard;
+- authority/transfer-lock guard;
 - verify Duty state;
 - validate `effective_at`;
 - close/supersede previous active assignment/usage;
@@ -81,7 +84,7 @@ Transaction:
 
 Transaction:
 
-- authority guard для local-owned Release/Duty context;
+- authority/transfer-lock guard для local-owned Release/Duty context;
 - permission/qualification validation;
 - create completed check + details/results;
 - derive final result server-side;
@@ -97,7 +100,7 @@ Completed check immutable. Correction = invalidation + new check.
 
 Transaction:
 
-- authority guard;
+- authority/transfer-lock guard;
 - permission validation;
 - create check/detail;
 - derive `FIT`/`UNFIT`;
@@ -110,7 +113,7 @@ Completed record не редагується напряму.
 
 Transaction:
 
-1. authority guard;
+1. authority/transfer-lock guard;
 2. verify assigned driver/authorized exception;
 3. verify vehicle/effective assignment;
 4. create completed evidence;
@@ -124,7 +127,7 @@ Driver check не підміняє qualified technical check.
 
 Transaction:
 
-- authority guard;
+- authority/transfer-lock guard;
 - read current assignments/checks/documents/defects/repairs;
 - determine actual context;
 - select applicable compliance rules;
@@ -140,7 +143,7 @@ Old evaluation batch не UPDATE-иться.
 
 Transaction:
 
-1. authority guard;
+1. authority/transfer-lock guard;
 2. verify optimistic version (`If-Match`/row version);
 3. load latest Duty/Release/assignments;
 4. fresh-evaluate all blocking rules;
@@ -157,7 +160,7 @@ Local SQLite не потребує PostgreSQL row-lock API; correctness забе
 
 Transaction:
 
-1. authority guard;
+1. authority/transfer-lock guard;
 2. verify Duty/Waybill policy;
 3. verify PRIMARY uniqueness where required;
 4. atomically obtain next number from local/central number sequence;
@@ -173,7 +176,7 @@ Transaction:
 
 Transaction:
 
-- authority guard;
+- authority/transfer-lock guard;
 - verify state/version;
 - create immutable document snapshot/version metadata;
 - audit;
@@ -185,7 +188,7 @@ PDF generation може виконувати локальна background task, �
 
 Transaction:
 
-- authority guard;
+- authority/transfer-lock guard;
 - verify Release authorization;
 - validate odometer;
 - append confirmed odometer reading;
@@ -199,7 +202,7 @@ Transaction:
 
 Transaction:
 
-- authority guard;
+- authority/transfer-lock guard;
 - verify `ON_LINE`;
 - validate arrival facts/odometer;
 - close actual usage periods;
@@ -211,7 +214,7 @@ Transaction:
 
 Transaction:
 
-- authority guard;
+- authority/transfer-lock guard;
 - verify `COMPLETED`;
 - validate required facts;
 - create immutable actual snapshot/version;
@@ -224,7 +227,7 @@ Transaction:
 
 Transaction:
 
-- authority guard;
+- authority/transfer-lock guard;
 - verify linked Trips CLOSED/CANCELLED as required;
 - verify return facts/blocking exceptions;
 - set `CLOSED`;
@@ -235,7 +238,7 @@ Transaction:
 
 Transaction:
 
-- authority guard;
+- authority/transfer-lock guard;
 - verify closing guards;
 - finalize immutable version reference;
 - set `CLOSED`;
@@ -246,9 +249,9 @@ Transaction:
 
 Closed entity не reopen-иться звичайним edit.
 
-Local correction дозволена лише поки authority = `LOCAL`.
+Local correction дозволена лише поки authority=`LOCAL` і немає active transfer lock.
 
-Після authority = `CENTRAL` correction створюється/застосовується на central; local отримує нову read-only effective version.
+Після authority=`CENTRAL` correction створюється/застосовується на central; local отримує нову read-only effective version.
 
 Correction створює new immutable snapshot/version, залишаючи попередню history.
 
@@ -258,21 +261,22 @@ Historical fuel row не UPDATE-иться.
 
 Correction = reversal/correction record + audit за затвердженою ledger-схемою.
 
-Authority guard діє так само, як для інших business data.
+Authority/transfer-lock guard діє так само, як для інших business data.
 
 ## 19. Prepare transfer batch
 
-Створення pending batch **не передає дані**.
+Створення pending batch **не передає дані і не змінює authority**.
 
 Transaction:
 
 1. select candidate records;
-2. verify they are still `LOCAL`;
-3. include required dependencies;
-4. snapshot versions/checksums;
-5. create `transfer_batch` + `transfer_items` зі статусом `PENDING_APPROVAL`;
-6. audit `TRANSFER_PREPARED`;
-7. commit.
+2. verify authority=`LOCAL`;
+3. verify records are not already transfer-locked by another active approved batch;
+4. include required dependencies;
+5. snapshot versions/checksums;
+6. create `transfer_batch` + `transfer_items` зі статусом `PENDING_APPROVAL`;
+7. audit `TRANSFER_PREPARED`;
+8. commit.
 
 Rule або central request може виконати цей етап автоматично.
 
@@ -283,14 +287,16 @@ Rule або central request може виконати цей етап автом
 Transaction:
 
 1. load pending batch;
-2. verify current item versions/checksums still match;
+2. verify item versions/checksums still match;
 3. if changed → reject approval and rebuild batch;
 4. set `approved_by/approved_at`;
 5. set batch `TRANSFERRING`;
-6. lock included local records from normal business mutation while transfer is active;
+6. set temporary transfer lock on included records;
 7. create delivery/outbox row;
 8. audit `TRANSFER_APPROVED`;
 9. commit.
+
+Authority records залишається `LOCAL`.
 
 ## 21. Delivery retry
 
@@ -298,10 +304,13 @@ Network delivery is outside the business transaction but is idempotent by `origi
 
 On timeout/network error:
 
-- batch remains pending delivery/failed retry state;
-- records do **not** become `CENTRAL`;
-- application may retry the identical approved payload;
-- operator sees status/error.
+- batch стає retryable/`FAILED` згідно implementation;
+- authority records залишається `LOCAL`;
+- temporary transfer lock лишається під час retry, щоб payload не змінився;
+- application може retry identical approved payload;
+- оператор бачить status/error.
+
+Якщо workflow дозволяє скасувати failed batch, cancellation transaction знімає transfer lock і лишає authority=`LOCAL`.
 
 No Kafka/Redis is required for local retry.
 
@@ -314,13 +323,14 @@ Transaction:
 1. load transfer batch;
 2. verify receipt matches batch/node/checksum;
 3. mark batch `ACKNOWLEDGED`;
-4. set included records authority = `CENTRAL`;
-5. persist `central_ack_id`/timestamp;
-6. mark delivery complete;
-7. audit `TRANSFER_ACKNOWLEDGED` and authority transition;
-8. commit.
+4. set included records authority=`CENTRAL`;
+5. clear temporary transfer lock;
+6. persist `central_ack_id`/timestamp/version;
+7. mark delivery complete;
+8. audit `TRANSFER_ACKNOWLEDGED` and `LOCAL→CENTRAL` authority transition;
+9. commit.
 
-Only this transaction removes local edit rights.
+Only this transaction permanently removes local edit rights.
 
 ## 23. Receive batch on Central
 
@@ -339,13 +349,13 @@ Transaction:
 
 ## 24. Central change returned to Local
 
-Central may send a newer version/snapshot for a `CENTRAL` record.
+Central may send a newer version/snapshot for a record authority=`CENTRAL`.
 
 Local transaction:
 
-- verify record authority is `CENTRAL`;
+- verify record authority=`CENTRAL`;
 - verify monotonic central version/receipt;
-- replace/update local read-only representation through system sync path;
+- update local read-only representation through system sync path;
 - audit;
 - commit.
 
@@ -355,7 +365,7 @@ This does not restore local edit rights.
 
 Critical audit entry is written in the same application transaction as the business state change whenever practical.
 
-Transfer preparation, approval, ACK, restore and authority changes are always audited.
+Transfer preparation, approval, ACK, cancellation, restore and authority changes are always audited.
 
 ## 26. Outbox rule
 
