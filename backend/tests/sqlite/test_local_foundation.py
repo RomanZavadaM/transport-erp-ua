@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import text
@@ -43,7 +43,7 @@ def local_database(tmp_path: Path) -> Iterator[tuple[str, Engine]]:
         engine.dispose()
 
 
-def _bootstrap(engine: Engine) -> tuple[object, object, object]:
+def _bootstrap(engine: Engine) -> tuple[UUID, UUID, UUID]:
     with Session(engine, expire_on_commit=False) as session:
         result = initialize_local_node(
             session,
@@ -55,6 +55,21 @@ def _bootstrap(engine: Engine) -> tuple[object, object, object]:
             node_name="Головний ПК",
         )
     return result.company_id, result.admin_user_id, result.node_id
+
+
+def _authority(engine: Engine, entity_id: UUID) -> dict[str, object]:
+    with engine.connect() as connection:
+        row = connection.execute(
+            text(
+                """
+                SELECT authority, transfer_lock_batch_id, central_ack_id
+                FROM record_authority
+                WHERE entity_type = 'test_record' AND entity_id = :entity_id
+                """
+            ),
+            {"entity_id": str(entity_id)},
+        ).mappings().one()
+        return dict(row)
 
 
 def test_local_migration_creates_foundation_and_pragmas(
@@ -124,7 +139,7 @@ def test_transfer_requires_local_approval_and_ack_changes_authority(
     _company_id, admin_user_id, node_id = _bootstrap(engine)
     entity_id = uuid4()
 
-    with Session(engine, expire_on_commit=False) as session:
+    with Session(engine) as session:
         batch_id = prepare_transfer_batch(
             session,
             node_id=node_id,
@@ -139,84 +154,65 @@ def test_transfer_requires_local_approval_and_ack_changes_authority(
                 )
             ],
         )
+    authority = _authority(engine, entity_id)
+    assert authority["authority"] == "LOCAL"
+    assert authority["transfer_lock_batch_id"] is None
+
+    with Session(engine) as session:
+        assert_local_mutable(session, entity_type="test_record", entity_id=entity_id)
+    with Session(engine) as session:
+        approve_transfer_batch(session, batch_id=batch_id, operator_id=admin_user_id)
+
+    authority = _authority(engine, entity_id)
+    assert authority["authority"] == "LOCAL"
+    assert authority["transfer_lock_batch_id"] == str(batch_id)
+    with Session(engine) as session, pytest.raises(
+        RecordNotLocallyMutableError, match="RECORD_LOCKED_FOR_TRANSFER"
+    ):
         assert_local_mutable(session, entity_type="test_record", entity_id=entity_id)
 
-        authority = session.execute(
-            text(
-                """
-                SELECT authority, transfer_lock_batch_id
-                FROM record_authority
-                WHERE entity_type = 'test_record' AND entity_id = :entity_id
-                """
-            ),
-            {"entity_id": str(entity_id)},
-        ).mappings().one()
-        assert authority["authority"] == "LOCAL"
-        assert authority["transfer_lock_batch_id"] is None
-
-        approve_transfer_batch(session, batch_id=batch_id, operator_id=admin_user_id)
-        authority = session.execute(
-            text(
-                """
-                SELECT authority, transfer_lock_batch_id
-                FROM record_authority
-                WHERE entity_type = 'test_record' AND entity_id = :entity_id
-                """
-            ),
-            {"entity_id": str(entity_id)},
-        ).mappings().one()
-        assert authority["authority"] == "LOCAL"
-        assert authority["transfer_lock_batch_id"] == str(batch_id)
-        with pytest.raises(RecordNotLocallyMutableError, match="RECORD_LOCKED_FOR_TRANSFER"):
-            assert_local_mutable(session, entity_type="test_record", entity_id=entity_id)
-
+    with Session(engine) as session:
         mark_transfer_attempt(
             session,
             batch_id=batch_id,
             error_code="NETWORK_UNAVAILABLE",
             error_message="central is offline",
         )
-        status = session.execute(
+    with engine.connect() as connection:
+        status = connection.execute(
             text("SELECT status FROM transfer_batches WHERE id = :id"),
             {"id": str(batch_id)},
         ).scalar_one()
-        assert status == "FAILED"
-        authority = session.execute(
-            text("SELECT authority FROM record_authority WHERE entity_id = :id"),
-            {"id": str(entity_id)},
-        ).scalar_one()
-        assert authority == "LOCAL"
+    assert status == "FAILED"
+    assert _authority(engine, entity_id)["authority"] == "LOCAL"
 
+    with Session(engine) as session:
         retry_failed_transfer(session, batch_id=batch_id)
+    with Session(engine) as session:
         apply_central_ack(
             session,
             batch_id=batch_id,
             central_ack_id="ack-test-0001",
             central_version=1,
         )
-        authority = session.execute(
-            text(
-                """
-                SELECT authority, transfer_lock_batch_id, central_ack_id
-                FROM record_authority
-                WHERE entity_type = 'test_record' AND entity_id = :entity_id
-                """
-            ),
-            {"entity_id": str(entity_id)},
-        ).mappings().one()
-        assert authority["authority"] == "CENTRAL"
-        assert authority["transfer_lock_batch_id"] is None
-        assert authority["central_ack_id"] == "ack-test-0001"
-        with pytest.raises(RecordNotLocallyMutableError, match="RECORD_MANAGED_CENTRALLY"):
-            assert_local_mutable(session, entity_type="test_record", entity_id=entity_id)
 
-        actions = session.execute(
+    authority = _authority(engine, entity_id)
+    assert authority["authority"] == "CENTRAL"
+    assert authority["transfer_lock_batch_id"] is None
+    assert authority["central_ack_id"] == "ack-test-0001"
+    with Session(engine) as session, pytest.raises(
+        RecordNotLocallyMutableError, match="RECORD_MANAGED_CENTRALLY"
+    ):
+        assert_local_mutable(session, entity_type="test_record", entity_id=entity_id)
+
+    with engine.connect() as connection:
+        actions = connection.execute(
             text("SELECT action FROM audit_log ORDER BY occurred_at, id")
         ).scalars().all()
-        assert "TRANSFER_PREPARED" in actions
-        assert "TRANSFER_APPROVED" in actions
-        assert "TRANSFER_FAILED" in actions
-        assert "TRANSFER_ACKNOWLEDGED" in actions
+    assert "TRANSFER_PREPARED" in actions
+    assert "TRANSFER_APPROVED" in actions
+    assert "TRANSFER_FAILED" in actions
+    assert "TRANSFER_ACKNOWLEDGED" in actions
 
 
 def test_failed_transfer_can_be_cancelled_and_unlocked(
@@ -226,7 +222,7 @@ def test_failed_transfer_can_be_cancelled_and_unlocked(
     _company_id, admin_user_id, node_id = _bootstrap(engine)
     entity_id = uuid4()
 
-    with Session(engine, expire_on_commit=False) as session:
+    with Session(engine) as session:
         batch_id = prepare_transfer_batch(
             session,
             node_id=node_id,
@@ -241,26 +237,22 @@ def test_failed_transfer_can_be_cancelled_and_unlocked(
                 )
             ],
         )
+    with Session(engine) as session:
         approve_transfer_batch(session, batch_id=batch_id, operator_id=admin_user_id)
+    with Session(engine) as session:
         mark_transfer_attempt(
             session,
             batch_id=batch_id,
             error_code="NETWORK_UNAVAILABLE",
         )
+    with Session(engine) as session:
         cancel_transfer_batch(session, batch_id=batch_id, operator_id=admin_user_id)
+    with Session(engine) as session:
         assert_local_mutable(session, entity_type="test_record", entity_id=entity_id)
-        row = session.execute(
-            text(
-                """
-                SELECT authority, transfer_lock_batch_id
-                FROM record_authority
-                WHERE entity_type = 'test_record' AND entity_id = :entity_id
-                """
-            ),
-            {"entity_id": str(entity_id)},
-        ).mappings().one()
-        assert row["authority"] == "LOCAL"
-        assert row["transfer_lock_batch_id"] is None
+
+    row = _authority(engine, entity_id)
+    assert row["authority"] == "LOCAL"
+    assert row["transfer_lock_batch_id"] is None
 
 
 def test_database_rejects_transfer_without_operator_approval(
@@ -298,6 +290,5 @@ def test_local_schema_can_downgrade_to_base(tmp_path: Path) -> None:
     database_url = f"sqlite+pysqlite:///{database_path.as_posix()}"
     upgrade_local_database(database_url)
     downgrade_local_database(database_url)
-    assert local_schema_tables(database_url) == {"alembic_version"} or local_schema_tables(
-        database_url
-    ) == set()
+    tables = local_schema_tables(database_url)
+    assert tables == {"alembic_version"} or tables == set()
