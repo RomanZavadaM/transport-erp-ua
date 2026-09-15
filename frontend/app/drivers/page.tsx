@@ -52,7 +52,7 @@ export default function DriversPage() {
   const [saving, setSaving] = useState(false);
 
   const loadDrivers = useCallback(async () => {
-    const response = await fetch("/drivers", { cache: "no-store" });
+    const response = await fetch("/api/drivers", { cache: "no-store" });
     if (!response.ok) throw new Error("Не вдалося завантажити список водіїв.");
     setDrivers((await response.json()) as Driver[]);
   }, []);
@@ -96,7 +96,7 @@ export default function DriversPage() {
         middle_name: form.middle_name.trim() || null,
         phone: form.phone.trim() || null,
       };
-      const response = await fetch(editingId ? `/drivers/${editingId}` : "/drivers", {
+      const response = await fetch(editingId ? `/api/drivers/${editingId}` : "/api/drivers", {
         method: editingId ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
