@@ -26,8 +26,8 @@ def test_cross_tenant_depot_fk_is_rejected(pg: Connection[Any]) -> None:
     vehicle_id = uuid4()
     token = str(vehicle_id).replace("-", "")[:10].upper()
 
-    with pg.transaction():
-        try:
+    try:
+        with pg.transaction():
             pg.execute(
                 """
                 INSERT INTO vehicles (
@@ -36,8 +36,8 @@ def test_cross_tenant_depot_fk_is_rejected(pg: Connection[Any]) -> None:
                 """,
                 (vehicle_id, company_b, depot_a, f"F-{token}", f"REG-{token}"),
             )
-        except errors.ForeignKeyViolation:
-            return
+    except errors.ForeignKeyViolation:
+        return
     raise AssertionError("cross-tenant depot reference was accepted")
 
 
@@ -59,8 +59,8 @@ def test_vehicle_assignment_overlap_is_rejected(pg: Connection[Any]) -> None:
         (company_id, duty_a, vehicle_id),
     )
 
-    with pg.transaction():
-        try:
+    try:
+        with pg.transaction():
             pg.execute(
                 """
                 INSERT INTO duty_vehicle_assignments (
@@ -72,8 +72,8 @@ def test_vehicle_assignment_overlap_is_rejected(pg: Connection[Any]) -> None:
                 """,
                 (company_id, duty_b, vehicle_id),
             )
-        except errors.ExclusionViolation:
-            return
+    except errors.ExclusionViolation:
+        return
     raise AssertionError("overlapping vehicle assignment was accepted")
 
 
@@ -95,8 +95,8 @@ def test_driver_assignment_overlap_is_rejected(pg: Connection[Any]) -> None:
         (company_id, duty_a, driver_id),
     )
 
-    with pg.transaction():
-        try:
+    try:
+        with pg.transaction():
             pg.execute(
                 """
                 INSERT INTO duty_driver_assignments (
@@ -108,8 +108,8 @@ def test_driver_assignment_overlap_is_rejected(pg: Connection[Any]) -> None:
                 """,
                 (company_id, duty_b, driver_id),
             )
-        except errors.ExclusionViolation:
-            return
+    except errors.ExclusionViolation:
+        return
     raise AssertionError("overlapping driver assignment was accepted")
 
 
@@ -124,16 +124,16 @@ def test_generated_trip_is_unique_per_run_and_service_date(pg: Connection[Any]) 
         schedule_run_id=schedule_run_id,
     )
 
-    with pg.transaction():
-        try:
+    try:
+        with pg.transaction():
             create_trip(
                 pg,
                 company_id,
                 route_version_id,
                 schedule_run_id=schedule_run_id,
             )
-        except errors.UniqueViolation:
-            return
+    except errors.UniqueViolation:
+        return
     raise AssertionError("duplicate generated trip was accepted")
 
 
@@ -148,8 +148,8 @@ def test_only_one_non_cancelled_primary_waybill_per_duty(pg: Connection[Any]) ->
         (company_id, duty_id),
     )
 
-    with pg.transaction():
-        try:
+    try:
+        with pg.transaction():
             pg.execute(
                 """
                 INSERT INTO waybills (company_id, duty_id, series, number, full_number)
@@ -157,8 +157,8 @@ def test_only_one_non_cancelled_primary_waybill_per_duty(pg: Connection[Any]) ->
                 """,
                 (company_id, duty_id),
             )
-        except errors.UniqueViolation:
-            return
+    except errors.UniqueViolation:
+        return
     raise AssertionError("second active PRIMARY waybill was accepted")
 
 
@@ -187,8 +187,8 @@ def test_medical_result_is_strict_fit_or_unfit(pg: Connection[Any]) -> None:
         (check_id, company_id, release_id, driver_id, actor_id),
     )
 
-    with pg.transaction():
-        try:
+    try:
+        with pg.transaction():
             pg.execute(
                 """
                 INSERT INTO medical_check_details (
@@ -197,8 +197,8 @@ def test_medical_result_is_strict_fit_or_unfit(pg: Connection[Any]) -> None:
                 """,
                 (check_id, company_id, driver_id),
             )
-        except errors.CheckViolation:
-            return
+    except errors.CheckViolation:
+        return
     raise AssertionError("unsupported medical result was accepted")
 
 
@@ -214,15 +214,15 @@ def test_append_only_duty_event_cannot_be_updated(pg: Connection[Any]) -> None:
         (event_id, company_id, duty_id),
     )
 
-    with pg.transaction():
-        try:
+    try:
+        with pg.transaction():
             pg.execute(
                 "UPDATE duty_events SET event_type = 'MUTATED' WHERE id = %s",
                 (event_id,),
             )
-        except psycopg.Error as exc:
-            assert exc.sqlstate == "55000"
-            return
+    except psycopg.Error as exc:
+        assert exc.sqlstate == "55000"
+        return
     raise AssertionError("append-only duty event was updated")
 
 
@@ -250,15 +250,15 @@ def test_completed_pre_trip_check_cannot_be_rewritten(pg: Connection[Any]) -> No
         (check_id, company_id, release_id, driver_id, actor_id),
     )
 
-    with pg.transaction():
-        try:
+    try:
+        with pg.transaction():
             pg.execute(
                 "UPDATE pre_trip_checks SET status = 'FAILED' WHERE id = %s",
                 (check_id,),
             )
-        except psycopg.Error as exc:
-            assert exc.sqlstate == "55000"
-            return
+    except psycopg.Error as exc:
+        assert exc.sqlstate == "55000"
+        return
     raise AssertionError("completed pre-trip check was rewritten")
 
 
