@@ -1,68 +1,100 @@
-# Обмеження та інваріанти PostgreSQL
+# Обмеження та інваріанти БД
 
-Критичні інваріанти забезпечуються PostgreSQL, а не лише application code.
+Architecture-v1.6 має один набір business invariants і два physical profiles: Local SQLite та Central PostgreSQL.
 
-Цей файл є коротким оглядом. Повний physical design:
+Критичне правило не може існувати тільки як PostgreSQL-specific constraint, якщо воно потрібне локальному застосунку.
+
+Пов’язані документи:
 
 - [`schema/00-Conventions.md`](schema/00-Conventions.md)
 - [`schema/07-RLS-Immutability-Indexes.md`](schema/07-RLS-Immutability-Indexes.md)
 - [`schema/08-Foreign-Keys-and-Delete-Policy.md`](schema/08-Foreign-Keys-and-Delete-Policy.md)
 - [`schema/09-Migration-Readiness.md`](schema/09-Migration-Readiness.md)
 
-## Фундаментальні DB invariants
+## Фундаментальні invariants
 
 1. Один автобус не має overlapping ACTIVE assignments.
 2. Один водій не має overlapping ACTIVE assignments.
-3. Один Trip не може мати два ACTIVE Duty memberships.
-4. ACTIVE route versions одного Route не перекривають validity period.
-5. ACTIVE schedule versions одного Schedule не перекривають validity period.
-6. Регулярний `schedule_run_id + service_date` генерує максимум один Trip.
-7. Business document numbers є унікальними.
-8. Tenant-aware relation не може послатися на row іншої company.
-9. Historical snapshots/versions/events/audit не можуть бути тихо UPDATE/DELETE runtime role.
-10. Critical state changes додатково обмежені domain state machine та DB protection там, де це фундаментальний invariant.
+3. Один Trip не має двох ACTIVE Duty memberships.
+4. Active route/schedule versions не мають недопустимого overlap.
+5. `schedule_run_id + service_date` генерує максимум один Trip.
+6. Business document numbers унікальні в межах затвердженої numbering scope.
+7. Historical snapshots/versions/events/audit не переписуються звичайним edit flow.
+8. State changes підпорядковані state machine.
+9. Local record з authority=`CENTRAL` не може бути змінений local business command.
+10. Transfer не змінює authority до verified central ACK.
+11. Transfer не стартує без explicit local operator approval.
 
-## Основні механізми
+## Local SQLite — механізми
 
-- restrictive FK delete policy;
-- unique/partial unique constraints;
-- CHECK constraints;
-- `daterange` для version validity;
-- `tstzrange` для resource periods;
-- GiST exclusion constraints;
+- controlled application write transactions;
+- FK;
+- UNIQUE;
+- CHECK;
+- indexes;
+- partial indexes, де доречно;
 - optimistic locking через `row_version`;
-- short row locks для critical transactions;
-- append-only grants/triggers;
-- Row Level Security;
+- application overlap/current-state validation;
+- triggers лише для фундаментальної immutability/authority defense-in-depth.
+
+Для resource assignment local backend перечитує актуальний стан усередині write transaction і тільки після цього записує assignment.
+
+## Central PostgreSQL — додаткові механізми
+
+На central ті самі rules можуть підсилюватися:
+
+- GiST exclusion constraints;
+- range types;
+- row locks;
+- RLS;
 - tenant-aware composite FK;
-- partitioning audit history;
-- transaction-local tenant context.
+- DB roles/grants;
+- partitioning після підтвердженої потреби.
+
+Це defense-in-depth central profile, а не вимога Local Desktop.
 
 ## Half-open periods
 
-Assignment ranges використовують `[from,to)`.
+Period semantics однакова на обох profiles: `[from,to)`.
 
 Тому:
 
-- `[08:00,10:00)`;
-- `[10:00,12:00)`
+- `08:00–10:00`;
+- `10:00–12:00`
 
-не перекриваються, а `[09:59,11:00)` із першим/другим — конфліктує відповідно.
+не конфліктують.
+
+Local зберігає from/to окремо та перевіряє overlap application query. Central може використовувати range/exclusion.
 
 ## Availability
 
-Frontend/backend availability query є лише попередньою інформацією. Остаточна гарантія під час concurrent allocation — database transaction + exclusion constraint.
+Попередня availability query не є остаточною гарантією.
+
+Остаточна перевірка відбувається під час mutation transaction:
+
+- Local SQLite — current-state recheck + coordinated write transaction;
+- Central PostgreSQL — те саме + DB-specific exclusion/locks за потреби.
 
 ## Delete policy
 
-Для business history default — `RESTRICT/NO ACTION`.
+Business history default — RESTRICT/NO ACTION semantics.
 
-Cascade не використовується для знищення Vehicle/Driver/Trip/Duty/Release/Waybill history. Operational помилка виправляється business state/correction workflow.
+Operational помилки виправляються lifecycle/correction workflow, а не фізичним видаленням історії.
 
-## RLS
+## Company/RLS
 
-Runtime role працює з company-scoped rows через RLS і не має `BYPASSRLS`. Cross-company integrity додатково захищається composite foreign keys.
+Local node зазвичай працює в одному enterprise context і не емулює RLS.
+
+Central PostgreSQL може використовувати RLS/composite FK для company isolation, якщо central deployment цього потребує.
+
+## Authority invariant
+
+Перед будь-яким local UPDATE/DELETE backend перевіряє authority.
+
+`CENTRAL` → mutation rejected.
+
+SQLite trigger може дублювати це правило для critical aggregate tables, але UI не є гарантом.
 
 ## Migration gate
 
-До Alembic migration #1 physical design проходить checklist [`schema/09-Migration-Readiness.md`](schema/09-Migration-Readiness.md). Нормативні policy-коди не повинні бути вигадані лише для того, щоб швидше написати constraint/seed.
+До M2 Local SQLite повинна пройти acceptance tests з `schema/09-Migration-Readiness.md`, включно з transfer approval/ACK/read-only і backup/restore.
