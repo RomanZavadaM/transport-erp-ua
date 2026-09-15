@@ -1,6 +1,6 @@
 # Каталог помилок API
 
-Статус: **M0 draft**
+Статус: **M0 freeze candidate**
 
 `error.code` — стабільний технічний контракт. Текст `message` може локалізуватися і не використовується клієнтом для business branching.
 
@@ -31,26 +31,33 @@
 
 Conflict details повинні містити ID конфліктної сутності та time period, якщо це не розкриває заборонені tenant data.
 
-## Документи
+## Документи / compliance
 
 | Code | HTTP | Значення |
 |---|---:|---|
-| `VEHICLE_DOCUMENT_REQUIRED` | 409 | Відсутній required document |
-| `VEHICLE_DOCUMENT_EXPIRED` | 409 | Критичний документ автобуса прострочений |
-| `DRIVER_DOCUMENT_REQUIRED` | 409 | Відсутній required document водія |
-| `DRIVER_DOCUMENT_EXPIRED` | 409 | Критичний документ водія прострочений |
+| `VEHICLE_DOCUMENT_REQUIRED` | 409 | Відсутній applicable required vehicle document |
+| `VEHICLE_DOCUMENT_EXPIRED` | 409 | Applicable blocking document автобуса прострочений |
+| `DRIVER_DOCUMENT_REQUIRED` | 409 | Відсутній applicable required driver document |
+| `DRIVER_DOCUMENT_EXPIRED` | 409 | Applicable blocking document водія прострочений |
 | `DOCUMENT_REVOKED` | 409 | Документ відкликаний |
+| `COMPLIANCE_EVIDENCE_REQUIRED` | 409 | Відсутнє applicable carrier/route/other evidence, яке не є driver/vehicle document |
+| `COMPLIANCE_RULE_NOT_APPLICABLE` | 409/422 | Команда намагається застосувати rule поза його context/effective period |
+
+Requiredness визначається applicable versioned compliance rule, а не одним глобальним списком документів.
 
 ## Контролі
 
 | Code | HTTP | Значення |
 |---|---:|---|
-| `MEDICAL_CHECK_REQUIRED` | 409 | Немає чинного required check |
-| `MEDICAL_CHECK_FAILED` | 409 | Effective medical result негативний |
-| `MEDICAL_CHECK_EXPIRED` | 409 | Check втратив чинність |
-| `TECHNICAL_CHECK_REQUIRED` | 409 | Немає чинного required check |
+| `MEDICAL_CHECK_REQUIRED` | 409 | Немає чинного required medical check |
+| `MEDICAL_CHECK_FAILED` | 409 | Effective medical result = `UNFIT` |
+| `MEDICAL_CHECK_EXPIRED` | 409 | Medical check втратив чинність |
+| `TECHNICAL_CHECK_REQUIRED` | 409 | Немає чинного qualified technical check |
 | `TECHNICAL_CHECK_FAILED` | 409 | Effective technical result негативний |
-| `TECHNICAL_CHECK_EXPIRED` | 409 | Check втратив чинність |
+| `TECHNICAL_CHECK_EXPIRED` | 409 | Technical check втратив чинність |
+| `DRIVER_PREDEPARTURE_CHECK_REQUIRED` | 409 | Немає required передвиїзного evidence перевірки технічного стану водієм |
+| `DRIVER_PREDEPARTURE_CHECK_FAILED` | 409 | Передвиїзний check водія має blocking failure |
+| `DRIVER_PREDEPARTURE_CHECK_SCOPE_DENIED` | 403 | Користувач не є assigned driver цього Duty або не має спеціального дозволу |
 | `CHECK_ALREADY_COMPLETED` | 409 | Completed check не редагується |
 | `CHECK_INVALIDATED` | 409 | Check визнаний недійсним |
 
@@ -58,7 +65,7 @@ Conflict details повинні містити ID конфліктної сут�
 
 | Code | HTTP | Значення |
 |---|---:|---|
-| `BLOCKING_DEFECT_EXISTS` | 409 | Є unresolved defect, що блокує release |
+| `BLOCKING_DEFECT_EXISTS` | 409 | Є unresolved defect, що блокує Release |
 | `ACTIVE_BLOCKING_REPAIR_EXISTS` | 409 | Є repair, що блокує operation |
 
 ## Release
@@ -76,12 +83,13 @@ Conflict details повинні містити ID конфліктної сут�
 
 | Code | HTTP | Значення |
 |---|---:|---|
-| `WAYBILL_ALREADY_EXISTS` | 409 | Duty вже має чинний Waybill за current policy |
+| `WAYBILL_PRIMARY_ALREADY_EXISTS` | 409 | Duty уже має non-cancelled `PRIMARY` Waybill за current enterprise policy |
 | `WAYBILL_ALREADY_ISSUED` | 409 | Повторна issue-команда недопустима |
 | `WAYBILL_ALREADY_CLOSED` | 409 | Closed document immutable |
 | `WAYBILL_NUMBER_CONFLICT` | 409 | Business number collision; має бути практично недосяжним через DB constraint |
 | `WAYBILL_NOT_READY_TO_CLOSE` | 409 | Missing required actual/final facts |
 | `WAYBILL_CORRECTION_REQUIRED` | 409 | Зміна closed document можлива лише через correction |
+| `WAYBILL_ROLE_NOT_ALLOWED` | 422 | `document_role` не дозволений deployment policy |
 
 ## Trip / Duty closing
 
@@ -131,7 +139,7 @@ Conflict details повинні містити ID конфліктної сут�
 ## Правила розвитку
 
 - existing code не змінює семантику silently;
-- новий code документується тут і в OpenAPI schema;
+- новий code документується тут і в OpenAPI contract/overlay;
 - frontend handling ґрунтується на `code`;
 - localized `message` не є частиною machine contract;
 - internal exception/SQL text ніколи не віддається клієнту.
