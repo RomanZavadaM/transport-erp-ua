@@ -67,17 +67,17 @@ def test_vehicle_create_list_and_update(local_client: TestClient) -> None:
         "year": 2020,
         "lifecycle_status": "ACTIVE",
     }
-    created = local_client.post("/vehicles", json=payload)
+    created = local_client.post("/api/vehicles", json=payload)
     assert created.status_code == 201
     vehicle_id = created.json()["id"]
 
-    listed = local_client.get("/vehicles")
+    listed = local_client.get("/api/vehicles")
     assert listed.status_code == 200
     assert len(listed.json()) == 1
     assert listed.json()[0]["fleet_number"] == "101"
 
     payload["lifecycle_status"] = "REPAIR"
-    updated = local_client.put(f"/vehicles/{vehicle_id}", json=payload)
+    updated = local_client.put(f"/api/vehicles/{vehicle_id}", json=payload)
     assert updated.status_code == 200
     assert updated.json()["lifecycle_status"] == "REPAIR"
     assert updated.json()["row_version"] == 2
@@ -92,17 +92,17 @@ def test_driver_create_list_and_update(local_client: TestClient) -> None:
         "phone": "+380670000000",
         "employment_status": "ACTIVE",
     }
-    created = local_client.post("/drivers", json=payload)
+    created = local_client.post("/api/drivers", json=payload)
     assert created.status_code == 201
     driver_id = created.json()["id"]
 
-    listed = local_client.get("/drivers")
+    listed = local_client.get("/api/drivers")
     assert listed.status_code == 200
     assert len(listed.json()) == 1
     assert listed.json()[0]["last_name"] == "Іваненко"
 
     payload["employment_status"] = "LEAVE"
-    updated = local_client.put(f"/drivers/{driver_id}", json=payload)
+    updated = local_client.put(f"/api/drivers/{driver_id}", json=payload)
     assert updated.status_code == 200
     assert updated.json()["employment_status"] == "LEAVE"
     assert updated.json()["row_version"] == 2
