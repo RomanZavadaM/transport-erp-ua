@@ -1,6 +1,6 @@
 # Каталог permissions API
 
-Статус: **M0 draft**
+Статус: **M0 freeze candidate**
 
 Backend перевіряє permissions, а не назву ролі. Ролі є наборами permissions і можуть конфігуруватися в межах затвердженої policy.
 
@@ -67,7 +67,7 @@ Backend перевіряє permissions, а не назву ролі. Ролі є
 - `duty.close`
 - `duty.cancel`
 
-## Release
+## Release / Checks
 
 - `release.read`
 - `release.evaluate`
@@ -78,6 +78,13 @@ Backend перевіряє permissions, а не назву ролі. Ролі є
 - `technical_check.read`
 - `technical_check.perform`
 - `technical_check.invalidate`
+- `driver_predeparture_check.read`
+- `driver_predeparture_check.perform`
+- `driver_predeparture_check.invalidate`
+
+`technical_check.perform` означає qualified/authorized technical actor. Назва job role не hardcode-иться в permission model.
+
+`driver_predeparture_check.perform` застосовується разом із own/assigned-driver scope: водій не може виконувати таку перевірку за іншого водія/Duty без окремого authorized workflow.
 
 ## Waybill
 
@@ -145,6 +152,8 @@ Backend перевіряє permissions, а не назву ролі. Ролі є
 | `POST /medical-checks/{id}/invalidate` | `medical_check.invalidate` |
 | `POST /releases/{id}/technical-checks` | `technical_check.perform` |
 | `POST /technical-checks/{id}/invalidate` | `technical_check.invalidate` |
+| `POST /releases/{id}/driver-predeparture-checks` | `driver_predeparture_check.perform` + assigned-driver scope |
+| `POST /driver-predeparture-checks/{id}/invalidate` | `driver_predeparture_check.invalidate` |
 | `POST /duties/{id}/waybills` | `waybill.create` |
 | `POST /waybills/{id}/generate` | `waybill.generate` |
 | `POST /waybills/{id}/issue` | `waybill.issue` |
@@ -161,7 +170,7 @@ Read permission не завжди означає однаковий DTO.
 - `driver.read` → повна operational projection;
 - `driver.read.minimum` → ПІБ/ідентифікація/required release fields;
 - `audit.read.own` → лише події, що стосуються поточного користувача/дозволеного subject;
-- driver mobile/read-only endpoints → own-resource scope.
+- driver own endpoints → own-resource scope.
 
 ## Tenant scope
 
@@ -173,7 +182,7 @@ Permissions повинні дозволяти deployment policy, яка забо
 
 ## Адміністратор
 
-`settings.manage`/`user.roles.manage` не імплікують `release.authorize`, `medical_check.perform` або `technical_check.perform`.
+`settings.manage`/`user.roles.manage` не імплікують `release.authorize`, `medical_check.perform`, `technical_check.perform` або `driver_predeparture_check.perform`.
 
 ## Правило розвитку
 
