@@ -2,7 +2,8 @@
 
 ## Архітектурний baseline
 
-Версія архітектури: **v1.4**
+Версія архітектури: **v1.4**  
+Статус: **M0 Architecture Freeze — regulatory review completed, final freeze review pending**.
 
 Канонічна мова проєкту: **українська (`uk`)**. Похідні локалі: `en`, `es`, `fr`, `de`.
 
@@ -12,7 +13,7 @@
 - PostgreSQL — транзакційне джерело істини.
 - `Trip != Duty`; один Duty містить 1..N Trips.
 - `Release` належить Duty.
-- `Waybill` базово належить Duty і може охоплювати 1..N Trips.
+- `Waybill` — versioned enterprise operational/accounting document, базово пов'язаний з Duty і 1..N Trips; exact document role/cardinality є policy, а не застарілим hardcoded statutory assumption.
 - Plan і Fact зберігаються окремо.
 - CLOSED history не переписується: snapshots/versions + correction workflow.
 - Audit та operational events — append-only.
@@ -90,26 +91,48 @@
 - translation governance/statuses;
 - localization test matrix для `uk/en/es/fr/de`.
 
-## Відкриті policy items `MR-*`
+### Regulatory / Business Review
 
-Див. `docs/02-Data/schema/09-Migration-Readiness.md`.
+Перевірено та зафіксовано станом на **15.09.2026**:
 
-Перед rigid DDL/seed ще потрібно business/legal confirmation для:
+- Закон України «Про автомобільний транспорт» №2344-III;
+- медичний контроль — наказ №65/80;
+- технічний контроль — наказ №974;
+- робочий час/відпочинок — Положення №340 з актуальними змінами;
+- новий електронний route-passport workflow — наказ №1473;
+- retention sources — Перелік №578/5 та Податковий кодекс, ст. 44.
 
-- допустимих результатів медичного контролю;
-- Waybill↔Duty policy/cardinality;
-- crew policy;
-- required/blocking document catalog;
-- operational-day cutoff;
-- Waybill numbering/reset policy;
-- legal retention/object-lock policy.
+`MR-001..MR-007` переведені з невизначеностей у confirmed/context/internal/legal policy decisions.
 
-## Наступні ворота Architecture Freeze
+Основні корекції:
 
-1. Regulatory/business review `MR-*` items.
-2. Розширення traceability та M0 acceptance suite.
-3. Фінальний Architecture Freeze review.
-4. Лише після M0 freeze — Alembic migration #1 та перший FastAPI module.
+- medical result для щозмінного check: `FIT/UNFIT`;
+- `FIT_WITH_RESTRICTIONS` не входить у rigid M0 medical state set;
+- technical checker — qualified/authorized actor, не hardcoded job title;
+- потрібне окреме driver pre-departure technical evidence;
+- required documents визначаються transport/service context + rule version;
+- crew model підтримує кількох водіїв;
+- Waybill не моделюється як універсально обов'язковий державний «дорожній лист»;
+- retention є class-based, із legal-hold/extension semantics;
+- route passport розглядається як future external government integration boundary.
+
+Business Rule Catalog, Traceability Matrix та Acceptance Criteria розширені відповідними `BR-*` / `AT-*`.
+
+## Документи regulatory baseline
+
+- `docs/10-Legal/Regulatory-Register.md`;
+- `docs/10-Legal/Regulatory-Review-2026-09.md`;
+- `docs/10-Legal/MR-Decision-Register.md`;
+- `docs/10-Legal/Regulatory-Change-Log.md`;
+- `docs/02-Data/schema/09-Migration-Readiness.md`.
+
+## Що лишилося до M0 Architecture Freeze
+
+1. Final cross-document consistency review.
+2. Перевірити, що regulatory corrections відображені у physical schema/API/UX без суперечностей.
+3. Сформувати M0 Freeze Checklist та explicit deferred-items register.
+4. Підняти architecture baseline до freeze version після review.
+5. Лише після прийняття freeze — Alembic migration #1 та application skeleton.
 
 ## Repository governance
 
