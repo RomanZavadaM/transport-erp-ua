@@ -1,215 +1,181 @@
-# PostgreSQL Physical Schema v1 — Migration Readiness Review
+# Migration Readiness — Local SQLite + Central PostgreSQL
 
-Статус: **M0 regulatory review completed 15.09.2026**
+Статус: **architecture-v1.6 review before M1.5**
 
-Мета: визначити, які рішення достатньо стабільні для майбутньої Alembic migration #1 та які deployment policy залишаються конфігураційними.
+## 1. Що вже зроблено
 
-## 1. Structural architecture — READY
+Architecture-v1.5 і M1.3 довели PostgreSQL server schema/invariants та Alembic lifecycle на central/server profile.
 
-Готово до freeze:
+Ця робота не втрачається.
 
-- PostgreSQL 16+ baseline;
-- `pgcrypto`, `citext`, `btree_gist`;
-- UUID PK;
-- `timestamptz` для instants;
-- tenant `company_id` + tenant-aware FK/RLS;
-- restrictive delete policy;
-- optimistic `row_version`;
+Architecture-v1.6 додає другий physical profile — **Local SQLite** — і робить його першим practical target для подальших business modules.
+
+## 2. Незмінне доменне ядро
+
+Не переглядаються:
+
+- UUID business identifiers;
 - `Trip != Duty`;
 - Duty 1..N Trips;
 - planned assignments != actual usage;
 - Release → Duty;
-- plan != fact;
+- Plan != Fact;
 - immutable closed snapshots/versions;
-- append-only audit/events;
-- `tstzrange [from,to)`;
-- GiST exclusion resource conflicts;
-- atomic document numbering;
-- idempotency;
+- append-only audit;
+- atomic business numbering;
+- idempotency там, де команда реально може повторитися;
 - route/schedule/check/document versioning;
+- correction workflow.
+
+## 3. Що більше не є universal physical requirement
+
+Наступні PostgreSQL features залишаються Central defense-in-depth, але не є Local prerequisites:
+
+- PostgreSQL 16+ як локальна БД;
+- `pgcrypto` / `citext` / `btree_gist`;
+- RLS;
+- composite tenant-aware FK як обов’язковий local pattern;
+- `tstzrange`;
+- GiST exclusion constraints;
+- DB runtime/reporting/backup roles;
+- partitioning;
+- `FOR UPDATE SKIP LOCKED`.
+
+## 4. Local SQLite migration target
+
+M1.5 повинна створити SQLite schema, яка підтримує той самий business contract.
+
+Minimum:
+
+- application-generated UUID;
+- FK enabled;
+- UNIQUE/CHECK;
+- indexes;
+- optimistic `row_version`;
+- exact date/time serialization;
+- exact numeric round-trip policy;
+- audit;
+- authority/transfer tables;
+- backup/restore metadata;
+- local immutability/read-only protections для critical records.
+
+## 5. Transfer additions v1.6
+
+Local schema потребує physical support для:
+
+- node identity;
+- authority state;
+- transfer batches;
+- transfer items;
+- local approval metadata;
+- delivery retry state;
+- central ACK/receipt;
+- central version/checksum metadata.
+
+Central schema потребує:
+
+- registered origin node/reference;
+- idempotent receive key (`origin_node_id + transfer_batch_id` або equivalent);
+- receipt/ACK;
+- origin/version provenance для прийнятих даних.
+
+## 6. Regulatory/business review
+
+Регуляторні рішення MR-001..MR-007 з architecture-v1.5 залишаються чинними. Зміна physical DB profile не змінює їх зміст.
+
+Зокрема:
+
+- medical result `FIT|UNFIT`;
+- multiple drivers/crew support;
+- context-aware document requirements;
+- explicit `service_date`;
+- generic configurable Waybill numbering;
 - correction workflow;
-- outbox/integrity architecture.
+- retention policy як enterprise/legal configuration.
 
-Physical design covers **77 core tables**.
+Повний реєстр: `docs/10-Legal/MR-Decision-Register.md`.
 
-## 2. Regulatory/business review results
+## 7. Local numbering
 
-Повний decision register: [`../../10-Legal/MR-Decision-Register.md`](../../10-Legal/MR-Decision-Register.md).
+Оскільки local node має працювати offline, numbering strategy не може вимагати online central sequence для кожного документа.
 
-### MR-001 — Medical result
+До M6 треба затвердити practical series/prefix/range policy для кількох автономних local nodes.
 
-**RESOLVED / CONFIRMED**
+Для одного local node звичайна local atomic sequence достатня.
 
-Для щозмінного передрейсового workflow normalized result:
+## 8. Local migration acceptance tests M1.5
 
-```text
-FIT
-UNFIT
-```
+Обов’язково довести:
 
-`FIT_WITH_RESTRICTIONS` не включається у rigid result set цього check.
+1. clean SQLite DB створюється автоматично при first run;
+2. FK реально enabled;
+3. schema upgrade виконується на копії/fixture;
+4. failed migration має recovery path;
+5. UUID/date/time/decimal values round-trip без зміни semantics;
+6. audit записується атомарно з critical mutation;
+7. `CENTRAL` record не можна змінити local business command;
+8. transfer не стартує без local approval;
+9. interrupted delivery не переводить authority у `CENTRAL`;
+10. duplicate delivery не дублюється central;
+11. valid ACK переводить records у local read-only;
+12. SQLite backup → restore відтворює DB + transfer state;
+13. documents manifest/checksum переживає restore.
 
-DB/API consequence:
+## 9. Central PostgreSQL acceptance tests
 
-- `fitness_result` CHECK → `FIT|UNFIT`;
-- `UNFIT` blocks Release;
-- completed check immutable; invalidation + replacement check.
+Зберігаємо existing server tests та додаємо:
 
-### MR-002 — Waybill cardinality
+- idempotent transfer receive;
+- unique transfer receipt;
+- origin/checksum validation;
+- central update versioning;
+- PostgreSQL resource-conflict constraints;
+- RLS тільки там, де central deployment його реально використовує.
 
-**RESOLVED AS INTERNAL POLICY**
+## 10. DDL / migration strategy
 
-Закон №2344-III не дає підстав hardcode historical «дорожній лист» як універсально обов'язковий документ для регулярного passenger workflow.
+Не намагаємося мати один буквальний SQL-файл для SQLite і PostgreSQL.
 
-Architecture decision:
+Маємо один domain/application contract і дві перевірені physical migration paths.
 
-- Waybill залишається enterprise operational/accounting document;
-- рекомендований deployment policy — один `PRIMARY` Waybill на Duty;
-- schema повинна дозволяти explicit document role/type, щоб майбутні додаткові document instances не ламали модель;
-- не використовувати безумовне `UNIQUE(duty_id)` для всіх можливих document roles.
+Де можливо — shared SQLAlchemy metadata/migration helpers. Де physical feature відрізняється — явний dialect-specific migration code з окремими tests.
 
-Перед migration implementation треба відобразити `document_role`/equivalent у waybill uniqueness design.
+## 11. Existing detailed schema files
 
-### MR-003 — Driver crew
+`01-Organization-Identity.md` .. `05-Waybills-Fuel-Maintenance.md` походять з PostgreSQL-oriented v1.5 design.
 
-**RESOLVED STRUCTURALLY**
+До реалізації відповідного M2–M6 модуля кожна таблиця проходить practical SQLite adaptation review.
 
-Чинне Положення №340 передбачає crew driving щонайменше двома водіями.
+Не потрібно переписувати всі 77 таблиць наперед до M1.5, якщо модуль ще не реалізується. Потрібно зараз створити правильні shared conventions та foundation tables, а domain tables переносити по milestone.
 
-Architecture consequence:
+## 12. Що є blocker до M2
 
-- multiple driver assignments/usage у Duty обов'язкові;
-- global same-driver overlap між Duty заборонений;
-- нормативний `crew_mode` відокремлюється від enterprise labels `PRIMARY/SECOND_DRIVER/RELIEF/TRAINEE`;
-- не створювати regulatory DB invariant «рівно один PRIMARY на весь Duty».
+Blocker:
 
-### MR-004 — Regulatory document catalog
+- SQLite local application starts cleanly;
+- migration lifecycle працює;
+- authority/transfer foundation працює;
+- backup/restore працює;
+- desktop packaging spike доводить реальний single-PC сценарій.
 
-**RESOLVED AS CONTEXT RULE**
-
-Стаття 39 Закону №2344-III має різні document requirements за видом перевезення.
-
-Architecture consequence:
-
-- document types залишаються довідниками;
-- `required/blocking` визначається compliance rule version + transport/service context;
-- не seed-ити один глобальний набір `required_for_release=true` для всіх Duty;
-- carrier-level license/contract/route-passport evidence не змішується з `driver_documents`/`vehicle_documents`.
-
-Це потребує rule seed data, але не зміни fundamental schema.
-
-### MR-005 — Operational day cutoff
-
-**RESOLVED AS INTERNAL POLICY**
-
-- `service_date` explicit і immutable;
-- cutoff optional company setting;
-- зміна cutoff не перераховує history;
-- M0 default: календарний operational date у company timezone без штучного cutoff, доки підприємство не затвердить інше.
-
-### MR-006 — Waybill numbering
-
-**RESOLVED AS INTERNAL POLICY**
-
-- `number_sequences` залишається generic;
-- series/year/prefix/suffix/next_value;
-- issued number never reused;
-- reset/format configurable, не DB law;
-- рекомендований default — series by document type/year, якщо enterprise policy не визначає інакше.
-
-### MR-007 — Retention/object lock
-
-**RESOLVED ARCHITECTURALLY / LEGAL POLICY BEFORE PRODUCTION**
-
-- retention by data/document class;
-- no automatic purge of CLOSED history;
-- legal hold/extended retention supported;
-- primary accounting documents юридичної особи повинні враховувати applicable tax minimum (для відповідної категорії 1825 днів) та довші строки, якщо вони застосовуються;
-- object-lock duration задається затвердженою enterprise retention matrix.
-
-Retention matrix є production configuration/legal deliverable, але не blocker для створення core tables.
-
-## 3. Додаткові regulatory corrections до design
-
-### Technical checker
-
-Наказ №974 не обмежує виконавця єдиною нормативною роллю «механік».
-
-Implementation rule:
-
-- domain concept: authorized/qualified `technical_checker`;
-- UI role `MECHANIC` може надавати permission `technical_check.perform`;
-- driver pre-departure technical check/evidence моделюється окремо від іншої technical inspection;
-- failed/blocking technical result blocks Release.
-
-### Route passport external identity
-
-Новий Порядок, чинний з 13.07.2026, переводить route passports до державного Єдиного комплексу.
-
-Core migration не повинна дублювати зовнішній registry, але future integration має мати external identifier/reference/sync metadata.
-
-Це post-MVP integration і не блокує migration #1.
-
-## 4. Що залишається до migration #1
-
-Не normative unknowns, а implementation preparation:
-
-1. відобразити `waybill document_role/type` у detailed DDL design;
-2. уточнити technical driver-predeparture evidence table/field mapping;
-3. сформувати context-aware compliance seed structure;
-4. затвердити stable technical permission/status seed list;
-5. створити migration acceptance tests;
-6. написати Alembic migration тільки **після фінального M0 Architecture Freeze**.
-
-## 5. Не blockers для migration #1
+Не blocker:
 
 - GPS;
 - ticketing;
 - payroll;
-- accounting integration;
 - parts warehouse;
-- external route-passport API integration;
-- advanced analytics;
-- final legal retention matrix values.
+- S3;
+- Redis;
+- Kubernetes;
+- advanced central analytics;
+- full rewrite усіх майбутніх domain DDL до SQLite до того, як ці модулі почнуть реалізовуватися.
 
-## 6. DDL generation order
+## 13. Практичне правило
 
-1. extensions;
-2. root/reference tables;
-3. tenant/identity;
-4. fleet/drivers/routes/planning;
-5. trips/duties;
-6. release/checks;
-7. files/templates/waybills;
-8. fuel/maintenance/corrections;
-9. audit/outbox/system;
-10. cyclic/deferred current-version FK;
-11. exclusions/specialized indexes;
-12. RLS;
-13. grants/immutable protections;
-14. partitions;
-15. stable technical seeds;
-16. schema acceptance tests.
+Перед реалізацією кожного наступного domain module:
 
-## 7. Migration acceptance tests
-
-Migration #1 повинна довести:
-
-- clean DB upgrades to head;
-- expected extensions;
-- PK/FK/UNIQUE/CHECK/EXCLUDE;
-- cross-company FK rejected;
-- resource overlap rejected;
-- duplicate generated Trip rejected;
-- duplicate Waybill number rejected;
-- invalid medical result rejected;
-- runtime role cannot mutate immutable history;
-- RLS tenant isolation;
-- context-rule seed structure is reproducible;
-- migration recreates schema from empty DB reproducibly.
-
-## 8. Freeze decision
-
-Після regulatory review **немає невирішеної нормативної невизначеності, яка вимагала б перепроєктування core aggregates**.
-
-Залишаються enterprise configuration/policy values, які повинні бути versioned/configurable і затверджуватися без зміни фундаментальної архітектури.
+1. взяти v1.5 logical/physical design як вихідну специфікацію;
+2. визначити мінімальну SQLite local schema;
+3. додати portable business constraints/tests;
+4. залишити PostgreSQL-specific constraints як central enhancement;
+5. не будувати infrastructure “на виріст”, якщо немає конкретного use case.
