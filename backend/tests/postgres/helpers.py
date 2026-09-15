@@ -110,10 +110,12 @@ def create_route_version(pg: Connection[Any], company_id: UUID) -> UUID:
 def create_schedule_run(
     pg: Connection[Any], company_id: UUID, route_version_id: UUID
 ) -> UUID:
-    route_id = pg.execute(
+    route_row = pg.execute(
         "SELECT route_id FROM route_versions WHERE id = %s",
         (route_version_id,),
-    ).fetchone()[0]
+    ).fetchone()
+    assert route_row is not None
+    route_id = route_row[0]
     schedule_id = uuid4()
     schedule_version_id = uuid4()
     calendar_id = uuid4()
