@@ -1,18 +1,23 @@
 # Версія архітектури
 
-Поточний baseline: **architecture-v1.4**
+Поточний baseline: **architecture-v1.5**
 
-Статус: **проєктування / до початку реалізації**
+Статус: **M0 Architecture Freeze — accepted candidate, pending merge/tag**
 
-## Зміст v1.4
+## Зміст v1.5
 
-`v1.4` розширює baseline `v1.3` мовною та i18n-архітектурою:
+`v1.5` завершує M0 та фіксує узгоджений production-oriented baseline:
 
-- українська (`uk`) є канонічною мовою проєкту;
-- підтримуються `en`, `es`, `fr`, `de`;
-- API business codes і status values не локалізуються;
-- UI використовує locale resources;
-- шаблони документів підтримують locale/version;
-- переклади документації є похідними від українського канону.
+- Modular Monolith + PostgreSQL source of truth;
+- `Trip != Duty`, Release→Duty, versioned Waybill;
+- Plan != Fact та immutable CLOSED history;
+- PostgreSQL conflict constraints, tenant isolation, RLS;
+- command-oriented REST API, optimistic locking, idempotency;
+- повний MVP/UX/permissions/testing/operations package;
+- українська (`uk`) як канонічна мова, `en/es/fr/de` як похідні локалі;
+- regulatory/business review `MR-001..MR-007` завершено;
+- physical schema та API синхронізовані з фінальними review-рішеннями;
+- machine API contract: base OpenAPI + freeze overlay;
+- M1 може початися тільки після merge/tag цього baseline.
 
-Architecture Freeze ще не завершено. До закриття milestone `M0 — Architecture Freeze` baseline може розвиватися через нові ADR та контрольовані зміни документації.
+Після tag `architecture-v1.5` фундаментальні зміни core aggregate boundaries, immutable-history model, resource-conflict invariants, Release workflow або tenant model потребують нового ADR та impact analysis.
