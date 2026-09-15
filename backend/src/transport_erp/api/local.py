@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from transport_erp.config import get_settings
 from transport_erp.local_runtime import create_local_backup, get_local_status, list_local_backups
 
-router = APIRouter(prefix="/local", tags=["Local runtime"])
+router = APIRouter(prefix="/api/local", tags=["Local runtime"])
 
 
 class LocalStatusResponse(BaseModel):
