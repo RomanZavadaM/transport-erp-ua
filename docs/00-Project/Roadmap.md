@@ -1,32 +1,42 @@
 # Roadmap
 
-## Phase 0 — Architecture Freeze
-- доменна модель;
-- DB constraints;
-- state machines;
-- permissions;
-- OpenAPI MVP;
-- UX flows;
-- deployment/backup/test strategy.
+## M0 — Architecture Freeze — COMPLETE
+- domain model та state machines;
+- PostgreSQL physical design/constraints;
+- API/OpenAPI contract;
+- permissions/RBAC;
+- UX flows/workspaces;
+- testing/traceability;
+- i18n;
+- deployment/backup/DR/observability;
+- regulatory/business review.
 
-## MVP
-- Identity/RBAC;
-- Fleet/Drivers/Documents;
-- Routes/Schedules;
-- Trips/Duties;
-- Dispatch assignments;
-- Medical/Technical checks;
-- Release;
-- Waybill PDF/history;
-- Departure/Return/Close;
-- Audit;
-- базова звітність.
+Frozen baseline: `architecture-v1.5` після merge/tag final review.
+
+## M1 — Foundation
+- application skeleton;
+- CI gates;
+- consolidated OpenAPI;
+- Alembic + migration #1;
+- DB acceptance tests;
+- Identity/RBAC/tenant isolation;
+- audit/outbox/observability foundation.
+
+## MVP implementation
+- M2 Fleet & Drivers;
+- M3 Routes/Schedules/Trips;
+- M4 Duties/Dispatch;
+- M5 Release/Checks;
+- M6 Waybill/PDF/history;
+- M7 Execution/Return/Close;
+- M8 Reports + production hardening.
 
 ## Post-MVP
-- Fuel full ledger;
-- Maintenance/Repairs deep workflows;
-- GPS;
+- GPS/live monitoring;
 - mobile driver app;
-- ticketing;
-- accounting/payroll integrations;
-- EDI.
+- passenger accounting/ticketing;
+- accounting/payroll;
+- fuel-card integration;
+- parts warehouse;
+- external route-passport integration;
+- advanced analytics/EDI.
