@@ -26,143 +26,106 @@
 
 ## M0 завершено
 
-- MVP Definition Package;
-- API Contract Package `/api/v1`;
-- PostgreSQL Physical Schema v1 — 77 core tables;
-- UX/wireframes/workspaces;
-- RBAC/permissions/separation of duties;
-- i18n contract `uk/en/es/fr/de`;
-- testing/acceptance/traceability;
-- production topology, backup/PITR, DR, observability;
-- regulatory/business review `MR-001..MR-007`.
+MVP, API contract, PostgreSQL physical design, UX, RBAC policy, i18n, testing/traceability, operations/DR та regulatory review завершені й frozen у architecture-v1.5.
 
 ## M1 — стан реалізації
 
 ### M1.1 Application skeleton + CI — DONE
 
-- FastAPI backend skeleton;
-- Next.js + TypeScript frontend skeleton;
-- development Docker Compose;
-- CI gates: Ruff, strict mypy, pytest, ESLint, TypeScript, production build, Compose validation.
-
-Merged to `main` as commit `f85c6b9…`.
+Merged to `main` as `f85c6b9…`.
 
 ### M1.2 Consolidated OpenAPI — DONE
 
-- base OpenAPI + freeze overlay;
-- deterministic consolidator;
-- machine-readable canonical `docs/03-API/openapi-mvp-v1-consolidated.yaml`;
-- structural OpenAPI 3.1 validation;
-- freeze-invariant validation;
-- CI drift check.
-
-Merged to `main` as commit `27ac384…`.
+Merged to `main` as `27ac384…`.
 
 ### M1.3 Alembic migration #1 + PostgreSQL invariants — DONE
 
-Merged to `main` as commit:
+Merged to `main` as:
 
 `d64c765b9ed6ee7acdf1add12fbf4ae26edeeba8`
-
-Implemented:
-
-- Alembic bootstrap;
-- PostgreSQL 16 physical schema;
-- all **77 core tables**;
-- `pgcrypto`, `citext`, `btree_gist`;
-- tenant-aware FK;
-- RLS;
-- immutable history triggers;
-- GiST `EXCLUDE` constraints for vehicle/driver time conflicts;
-- route/schedule version overlap protection;
-- generated Trip uniqueness;
-- PRIMARY Waybill constraint;
-- medical result set `FIT | UNFIT`;
-- separate `DRIVER_TECHNICAL_PREDEPARTURE` check type;
-- full initial downgrade.
 
 CI lifecycle verified:
 
 `upgrade head → 12 PostgreSQL acceptance tests → downgrade base → upgrade head → schema verification`
 
-Acceptance suite verifies, among other things:
+Issue #18 closed.
 
-- exactly 77 core tables;
-- cross-tenant FK rejection;
-- vehicle double-booking rejection;
-- driver double-booking rejection;
-- duplicate generated Trip rejection;
-- second active PRIMARY Waybill rejection;
-- invalid medical result rejection;
-- append-only/immutable historical records;
-- RLS tenant isolation.
+## M1.4 — Identity and access foundation — ACTIVE, IMPLEMENTED IN PR
 
-Issue #18 is closed.
+GitHub Issue: **#19**  
+Working branch: **`feature/m1.4-identity-access`**  
+Draft PR: **#24**.
 
-## M1.4 — Identity and access foundation — ACTIVE
+### Durable implementation checkpoints
 
-GitHub Issue: **#19**.
+- `e627bb886521cffd2b2aee9323d0e4a71fc29a85` — identity domain/application/persistence foundation + migration #2;
+- `2e8a0f75f928023adf4c8da058956e9eac2dd9d6` — cookie session auth, RBAC HTTP API, CSRF middleware;
+- `0f8add2285f1d594c2b666b03c430e8d97dd42ce` — identity security and PostgreSQL acceptance tests;
+- `90729275c3dbdf64d99c699633d4cd3dfc0779e0` — CI diagnostics fixes + safe client IP normalization;
+- `fadfd0e0f592dea3026ab0a4b636a7400f2305c1` — strict mypy test fix;
+- `8d98514da20622dc3b9884054971e9de95d97373` — OpenAPI overlay synchronized with identity/session API;
+- `12213baa2e2c4c7e7582142e3e95683bdc531b2b` — CI-generated consolidated OpenAPI contract.
 
-Goal: implement the base users/roles/permissions/session/tenant access layer on top of the already-created PostgreSQL identity schema.
+### Implemented in M1.4
 
-Already confirmed before implementation:
+- bounded context `identity/domain/application/infrastructure/api`;
+- SQLAlchemy session factory and transaction-local tenant context via `SET LOCAL app.company_id`;
+- Argon2id password hashing;
+- opaque cryptographically-random session tokens;
+- only SHA-256 session-token hash stored in PostgreSQL;
+- HttpOnly browser session cookie;
+- double-submit CSRF protection bound to current session;
+- production guard requiring secure cookies;
+- session login/rotation/revocation;
+- user status handling `ACTIVE/SUSPENDED/DISABLED`;
+- permission-based authorization, not hardcoded role names;
+- effective permission resolution;
+- users/roles/permissions management foundation;
+- reusable FastAPI `require_permission(...)` dependency;
+- request-id and stable API error envelope;
+- `/api/v1/auth/login`, `/auth/refresh`, `/auth/logout`, `/auth/me`, `/auth/permissions`;
+- `/api/v1/users` create/list/get/patch/status/roles foundation;
+- `/api/v1/roles` and `/api/v1/permissions` foundation;
+- migration #2 with complete frozen permission catalog seed;
+- system `ADMIN` template role with identity/settings/audit permissions only;
+- ADMIN does **not** implicitly receive release/medical/technical permissions;
+- narrow PostgreSQL `SECURITY DEFINER` company bootstrap resolver for login;
+- DB trigger rejecting cross-tenant role assignment;
+- identity unit tests and real PostgreSQL/API acceptance tests;
+- OpenAPI overlay now describes cookie auth, CSRF, users/roles endpoints and identity DTOs.
 
-- backend authorizes by **permission code**, not hardcoded role name;
-- tenant isolation is independent from RBAC;
-- administrator permissions do not implicitly grant dispatcher/medical/technical business permissions;
-- role permissions must support separation-of-duties policy;
-- `users`, `user_sessions`, `roles`, `permissions`, `user_roles`, `role_permissions` already exist in migration #1;
-- browser auth must avoid long-lived credentials in localStorage;
-- canonical permission catalog: `docs/03-API/Permissions-Catalog.md`;
-- canonical identity schema: `docs/02-Data/schema/01-Organization-Identity.md`.
+### CI findings already resolved
 
-### Planned M1.4 implementation order
+- Ruff import/encoding diagnostics resolved without weakening Ruff rules;
+- TestClient peer name `testclient` is not forced into PostgreSQL `inet`; application stores peer IP only when syntactically valid;
+- strict mypy complaint over psycopg `object` result fixed with explicit typed cast;
+- migration #2 already succeeded on clean PostgreSQL in CI;
+- OpenAPI overlay validates and consolidated contract has been regenerated.
 
-1. create `identity` backend module boundaries (`domain/application/infrastructure/api`);
-2. database transaction/session abstraction with tenant context (`SET LOCAL app.company_id`);
-3. password hashing with Argon2id;
-4. user repository and status handling (`ACTIVE/SUSPENDED/DISABLED`);
-5. role/permission repositories and effective-permission resolution;
-6. session issuance using opaque random token + only token hash stored in DB;
-7. secure session cookie contract and logout/revocation;
-8. `/api/v1/auth/login`, `/logout`, `/me`, `/permissions`;
-9. reusable FastAPI `require_permission(...)` dependency;
-10. user/role management foundation required by MVP;
-11. PostgreSQL integration tests for tenant/RBAC/session isolation;
-12. API tests for 401/403, suspended/disabled users, revoked/expired sessions and permission enforcement;
-13. CI green before merge.
+### Remaining before M1.4 merge
 
-M1.4 is **not yet implemented** at this checkpoint; analysis of Issue #19, permissions catalog and identity schema has started.
+1. run full CI on a normal commit after generated OpenAPI sync;
+2. require green Backend quality, PostgreSQL lifecycle, OpenAPI, Frontend and Compose jobs;
+3. if needed, fix only concrete CI findings without relaxing quality gates;
+4. self-review PR #24 diff;
+5. mark PR ready and squash-merge;
+6. verify Issue #19 closes;
+7. update `main/PROJECT_STATE.md` with final M1.4 merge SHA.
 
 ## Next after M1.4
 
-M1.5 — audit/outbox/observability foundation (Issue #20).
+**M1.5 — audit/outbox/observability foundation (Issue #20).**
 
 Only after M1 foundation is complete do we move to M2 Fleet & Drivers business modules.
 
 ## Regulatory baseline
 
-State verified on 15.09.2026. Canonical documents:
-
-- `docs/10-Legal/Regulatory-Register.md`;
-- `docs/10-Legal/Regulatory-Review-2026-09.md`;
-- `docs/10-Legal/MR-Decision-Register.md`;
-- `docs/10-Legal/Regulatory-Change-Log.md`.
-
+State verified on 15.09.2026. Canonical documents are under `docs/10-Legal/`.
 Traceability: `source → MR decision → BR-* → API/DB/policy → AT-*`.
 
 ## Deferred — not blockers for M1
 
-- GPS/live monitoring;
-- passenger accounting/e-ticketing;
-- mobile driver app;
-- payroll/accounting;
-- fuel-card integration;
-- parts warehouse;
-- external route-passport integration;
-- advanced analytics;
-- additional non-primary document roles;
-- final enterprise retention periods.
+GPS/live monitoring, passenger accounting/e-ticketing, mobile driver app, payroll/accounting, fuel-card integration, parts warehouse, external route-passport integration, advanced analytics, additional non-primary document roles, final enterprise retention periods.
 
 Deferred work cannot change frozen M0 invariants without ADR + impact review.
 

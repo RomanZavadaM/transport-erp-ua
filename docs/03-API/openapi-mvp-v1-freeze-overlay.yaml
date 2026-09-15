@@ -1,10 +1,11 @@
 overlay: 1.0.0
 info:
-  title: TransportERP-UA M0 regulatory freeze overlay
-  version: 1.0.0
+  title: TransportERP-UA architecture-v1.5 implementation overlay
+  version: 1.1.0
   description: >-
     Обов'язковий overlay до openapi-mvp-v1.yaml. Узгоджує machine-readable
-    contract із regulatory/business review 15.09.2026 та architecture-v1.5 freeze.
+    contract із regulatory/business review 15.09.2026, architecture-v1.5 freeze
+    та M1 identity/access foundation.
 actions:
   - target: $.components.schemas.MedicalCheckCreate.properties.result
     description: Щозмінний medical result має тільки FIT або UNFIT.
@@ -13,7 +14,7 @@ actions:
       enum: [FIT, UNFIT]
 
   - target: $.components.schemas
-    description: Додає schemas для driver pre-departure check та Waybill create policy.
+    description: Додає freeze та M1 identity schemas.
     update:
       DriverPredepartureCheckCreate:
         type: object
@@ -50,9 +51,143 @@ actions:
           series:
             type: [string, 'null']
             description: Optional requested/configured series; server numbering policy remains authoritative.
+      IdentityUser:
+        type: object
+        required: [id, company_id, username, status]
+        properties:
+          id: {type: string, format: uuid}
+          company_id: {type: string, format: uuid}
+          username: {type: string}
+          email: {type: [string, 'null']}
+          status: {type: string, enum: [ACTIVE, SUSPENDED, DISABLED]}
+          preferred_locale:
+            type: [string, 'null']
+            enum: [uk, en, es, fr, de, null]
+      AuthLoginRequest:
+        type: object
+        required: [company_edrpou, username, password]
+        properties:
+          company_edrpou:
+            type: string
+            pattern: '^[0-9]{8,10}$'
+          username: {type: string, minLength: 1, maxLength: 100}
+          password: {type: string, format: password, minLength: 12, maxLength: 256, writeOnly: true}
+      AuthMeData:
+        type: object
+        required: [user, permissions]
+        properties:
+          user: {$ref: '#/components/schemas/IdentityUser'}
+          permissions:
+            type: array
+            items: {type: string}
+      AuthMeResponse:
+        type: object
+        required: [data]
+        properties:
+          data: {$ref: '#/components/schemas/AuthMeData'}
+      PermissionListResponse:
+        type: object
+        required: [data]
+        properties:
+          data:
+            type: array
+            items: {type: string}
+      IdentityUserCreate:
+        type: object
+        required: [username, password]
+        properties:
+          username: {type: string, minLength: 1, maxLength: 100}
+          email: {type: [string, 'null'], maxLength: 320}
+          password: {type: string, format: password, minLength: 12, maxLength: 256, writeOnly: true}
+          preferred_locale:
+            type: [string, 'null']
+            enum: [uk, en, es, fr, de, null]
+      IdentityUserPatch:
+        type: object
+        properties:
+          email: {type: [string, 'null'], maxLength: 320}
+          preferred_locale:
+            type: [string, 'null']
+            enum: [uk, en, es, fr, de, null]
+      IdentityUserResponse:
+        type: object
+        required: [data]
+        properties:
+          data: {$ref: '#/components/schemas/IdentityUser'}
+      IdentityUserListResponse:
+        type: object
+        required: [data]
+        properties:
+          data:
+            type: array
+            items: {$ref: '#/components/schemas/IdentityUser'}
+      IdentityRole:
+        type: object
+        required: [id, code, name, system_role, active]
+        properties:
+          id: {type: string, format: uuid}
+          company_id: {type: [string, 'null'], format: uuid}
+          code: {type: string}
+          name: {type: string}
+          system_role: {type: boolean}
+          active: {type: boolean}
+      IdentityRoleCreate:
+        type: object
+        required: [code, name]
+        properties:
+          code: {type: string, minLength: 2, maxLength: 80}
+          name: {type: string, minLength: 1, maxLength: 200}
+          permissions:
+            type: array
+            items: {type: string}
+            default: []
+      IdentityRoleResponse:
+        type: object
+        required: [data]
+        properties:
+          data: {$ref: '#/components/schemas/IdentityRole'}
+      IdentityRoleListResponse:
+        type: object
+        required: [data]
+        properties:
+          data:
+            type: array
+            items: {$ref: '#/components/schemas/IdentityRole'}
+      UserRolesReplace:
+        type: object
+        required: [role_ids]
+        properties:
+          role_ids:
+            type: array
+            items: {type: string, format: uuid}
+      UserRolesData:
+        type: object
+        required: [user_id, roles]
+        properties:
+          user_id: {type: string, format: uuid}
+          roles:
+            type: array
+            items: {type: string}
+      UserRolesResponse:
+        type: object
+        required: [data]
+        properties:
+          data: {$ref: '#/components/schemas/UserRolesData'}
+
+  - target: $.components.securitySchemes
+    description: Browser authentication uses an opaque HttpOnly session cookie; unsafe methods also require CSRF header proof.
+    update:
+      SessionCookie:
+        type: apiKey
+        in: cookie
+        name: transport_erp_session
+      CsrfHeader:
+        type: apiKey
+        in: header
+        name: X-CSRF-Token
 
   - target: $.paths
-    description: Додає окремий driver pre-departure technical check resource.
+    description: Додає окремий driver pre-departure technical check resource та M1 identity/access API.
     update:
       /releases/{release_id}/driver-predeparture-checks:
         get:
@@ -62,8 +197,7 @@ actions:
           parameters:
             - $ref: '#/components/parameters/ReleaseId'
           responses:
-            '200':
-              description: OK
+            '200': {description: OK}
         post:
           tags: [Release]
           summary: Зафіксувати передвиїзну перевірку технічного стану водієм
@@ -75,17 +209,14 @@ actions:
             required: true
             content:
               application/json:
-                schema:
-                  $ref: '#/components/schemas/DriverPredepartureCheckCreate'
+                schema: {$ref: '#/components/schemas/DriverPredepartureCheckCreate'}
           responses:
             '201':
               description: Created
               content:
                 application/json:
-                  schema:
-                    $ref: '#/components/schemas/CheckResponse'
-            '403':
-              description: Caller is not the assigned driver or lacks explicit permission
+                  schema: {$ref: '#/components/schemas/CheckResponse'}
+            '403': {description: Caller is not the assigned driver or lacks explicit permission}
       /driver-predeparture-checks/{check_id}:
         get:
           tags: [Release]
@@ -95,16 +226,13 @@ actions:
             - name: check_id
               in: path
               required: true
-              schema:
-                type: string
-                format: uuid
+              schema: {type: string, format: uuid}
           responses:
             '200':
               description: OK
               content:
                 application/json:
-                  schema:
-                    $ref: '#/components/schemas/CheckResponse'
+                  schema: {$ref: '#/components/schemas/CheckResponse'}
       /driver-predeparture-checks/{check_id}/invalidate:
         post:
           tags: [Release]
@@ -114,18 +242,257 @@ actions:
             - name: check_id
               in: path
               required: true
-              schema:
-                type: string
-                format: uuid
+              schema: {type: string, format: uuid}
           requestBody:
             required: true
             content:
               application/json:
-                schema:
-                  $ref: '#/components/schemas/CommentCommand'
+                schema: {$ref: '#/components/schemas/CommentCommand'}
+          responses:
+            '200': {description: Invalidated}
+      /auth/login:
+        post:
+          tags: [Identity]
+          summary: Створити browser session
+          security: []
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema: {$ref: '#/components/schemas/AuthLoginRequest'}
           responses:
             '200':
-              description: Invalidated
+              description: Session created; opaque token is returned only as HttpOnly cookie
+              content:
+                application/json:
+                  schema: {$ref: '#/components/schemas/AuthMeResponse'}
+            '401': {description: Invalid credentials}
+            '403': {description: Account unavailable}
+      /auth/refresh:
+        post:
+          tags: [Identity]
+          summary: Rotate current browser session
+          security:
+            - SessionCookie: []
+              CsrfHeader: []
+          responses:
+            '200':
+              description: Session rotated
+              content:
+                application/json:
+                  schema: {$ref: '#/components/schemas/AuthMeResponse'}
+            '401': {description: Session unavailable}
+      /auth/logout:
+        post:
+          tags: [Identity]
+          summary: Revoke current browser session
+          security:
+            - SessionCookie: []
+              CsrfHeader: []
+          responses:
+            '204': {description: Session revoked}
+      /auth/me:
+        get:
+          tags: [Identity]
+          summary: Поточний користувач та effective permissions
+          security:
+            - SessionCookie: []
+          responses:
+            '200':
+              description: OK
+              content:
+                application/json:
+                  schema: {$ref: '#/components/schemas/AuthMeResponse'}
+            '401': {description: Session required}
+      /auth/permissions:
+        get:
+          tags: [Identity]
+          summary: Effective permissions поточного користувача
+          security:
+            - SessionCookie: []
+          responses:
+            '200':
+              description: OK
+              content:
+                application/json:
+                  schema: {$ref: '#/components/schemas/PermissionListResponse'}
+      /users:
+        get:
+          tags: [Identity]
+          summary: Користувачі tenant
+          x-permission: user.read
+          security:
+            - SessionCookie: []
+          responses:
+            '200':
+              description: OK
+              content:
+                application/json:
+                  schema: {$ref: '#/components/schemas/IdentityUserListResponse'}
+        post:
+          tags: [Identity]
+          summary: Створити користувача tenant
+          x-permission: user.create
+          security:
+            - SessionCookie: []
+              CsrfHeader: []
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema: {$ref: '#/components/schemas/IdentityUserCreate'}
+          responses:
+            '201':
+              description: Created
+              content:
+                application/json:
+                  schema: {$ref: '#/components/schemas/IdentityUserResponse'}
+      /users/{user_id}:
+        parameters:
+          - name: user_id
+            in: path
+            required: true
+            schema: {type: string, format: uuid}
+        get:
+          tags: [Identity]
+          summary: Користувач tenant
+          x-permission: user.read
+          security:
+            - SessionCookie: []
+          responses:
+            '200':
+              description: OK
+              content:
+                application/json:
+                  schema: {$ref: '#/components/schemas/IdentityUserResponse'}
+        patch:
+          tags: [Identity]
+          summary: Оновити profile fields користувача
+          x-permission: user.update
+          security:
+            - SessionCookie: []
+              CsrfHeader: []
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema: {$ref: '#/components/schemas/IdentityUserPatch'}
+          responses:
+            '200':
+              description: Updated
+              content:
+                application/json:
+                  schema: {$ref: '#/components/schemas/IdentityUserResponse'}
+      /users/{user_id}/activate:
+        post:
+          tags: [Identity]
+          summary: Активувати користувача
+          x-permission: user.status.change
+          security:
+            - SessionCookie: []
+              CsrfHeader: []
+          parameters:
+            - name: user_id
+              in: path
+              required: true
+              schema: {type: string, format: uuid}
+          responses:
+            '200': {description: Activated}
+      /users/{user_id}/suspend:
+        post:
+          tags: [Identity]
+          summary: Призупинити користувача
+          x-permission: user.status.change
+          security:
+            - SessionCookie: []
+              CsrfHeader: []
+          parameters:
+            - name: user_id
+              in: path
+              required: true
+              schema: {type: string, format: uuid}
+          responses:
+            '200': {description: Suspended}
+      /users/{user_id}/roles:
+        parameters:
+          - name: user_id
+            in: path
+            required: true
+            schema: {type: string, format: uuid}
+        get:
+          tags: [Identity]
+          summary: Ролі користувача
+          x-permission: user.read
+          security:
+            - SessionCookie: []
+          responses:
+            '200':
+              description: OK
+              content:
+                application/json:
+                  schema: {$ref: '#/components/schemas/UserRolesResponse'}
+        put:
+          tags: [Identity]
+          summary: Замінити набір ролей користувача
+          x-permission: user.roles.manage
+          security:
+            - SessionCookie: []
+              CsrfHeader: []
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema: {$ref: '#/components/schemas/UserRolesReplace'}
+          responses:
+            '200':
+              description: Updated
+              content:
+                application/json:
+                  schema: {$ref: '#/components/schemas/UserRolesResponse'}
+      /roles:
+        get:
+          tags: [Identity]
+          summary: Системні та tenant roles, видимі поточному tenant
+          x-permission: role.read
+          security:
+            - SessionCookie: []
+          responses:
+            '200':
+              description: OK
+              content:
+                application/json:
+                  schema: {$ref: '#/components/schemas/IdentityRoleListResponse'}
+        post:
+          tags: [Identity]
+          summary: Створити tenant role
+          x-permission: role.manage
+          security:
+            - SessionCookie: []
+              CsrfHeader: []
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema: {$ref: '#/components/schemas/IdentityRoleCreate'}
+          responses:
+            '201':
+              description: Created
+              content:
+                application/json:
+                  schema: {$ref: '#/components/schemas/IdentityRoleResponse'}
+      /permissions:
+        get:
+          tags: [Identity]
+          summary: Каталог stable permission codes
+          x-permission: permission.read
+          security:
+            - SessionCookie: []
+          responses:
+            '200':
+              description: OK
+              content:
+                application/json:
+                  schema: {$ref: '#/components/schemas/PermissionListResponse'}
 
   - target: "$['paths']['/duties/{duty_id}/waybills']['post']"
     description: Waybill create приймає explicit document_role; PRIMARY є default enterprise policy.
@@ -134,37 +501,20 @@ actions:
         required: false
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/WaybillCreate'
+            schema: {$ref: '#/components/schemas/WaybillCreate'}
 
   - target: $.components.schemas.WaybillRead
     description: Waybill response явно повертає document_role.
     update:
       required: [id, duty_id, document_role, full_number, status, row_version]
       properties:
-        id:
-          type: string
-          format: uuid
-        duty_id:
-          type: string
-          format: uuid
-        document_role:
-          type: string
-        full_number:
-          type: string
-        status:
-          type: string
-        current_version_id:
-          type: [string, 'null']
-          format: uuid
-        issued_at:
-          type: [string, 'null']
-          format: date-time
-        returned_at:
-          type: [string, 'null']
-          format: date-time
-        closed_at:
-          type: [string, 'null']
-          format: date-time
-        row_version:
-          type: integer
+        id: {type: string, format: uuid}
+        duty_id: {type: string, format: uuid}
+        document_role: {type: string}
+        full_number: {type: string}
+        status: {type: string}
+        current_version_id: {type: [string, 'null'], format: uuid}
+        issued_at: {type: [string, 'null'], format: date-time}
+        returned_at: {type: [string, 'null'], format: date-time}
+        closed_at: {type: [string, 'null'], format: date-time}
+        row_version: {type: integer}
