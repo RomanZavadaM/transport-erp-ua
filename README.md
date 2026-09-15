@@ -1,51 +1,68 @@
 # TransportERP-UA
 
-Web-based transport enterprise management system for Ukraine.
+**Основна мова проєкту — українська.**
 
-The system is intended to automate transport operations, including fleet and driver registries, routes and schedules, trip planning, operational duties, pre-trip medical and technical control, dispatcher release authorization, waybills, actual movement, mileage, fuel, maintenance, repairs, documents, reporting, users, roles, and audit.
+[English](docs/i18n/en/README.md) · [Español](docs/i18n/es/README.md) · [Français](docs/i18n/fr/README.md) · [Deutsch](docs/i18n/de/README.md)
 
-## Architecture baseline
+TransportERP-UA — вебсистема для транспортного підприємства України, призначена для автоматизації обліку автобусів і водіїв, маршрутів і розкладів, планування рейсів, нарядів, випуску на лінію, медичного й технічного контролю, шляхових листів, фактичного руху, пробігу, пального, ТО та ремонтів, документів, звітності, ролей і аудиту.
 
-Current architecture baseline: **v1.3**.
+## Архітектурний baseline
 
-Core decisions:
+Поточна версія архітектури: **v1.3**.
 
-- modular monolith for the first production versions;
-- PostgreSQL as the transactional source of truth;
-- `Trip != Duty`: a duty is an operational vehicle/crew shift and may contain one or more trips;
-- release belongs to a duty;
-- a waybill is based on a duty and may cover 1..N trips;
-- plan and fact are stored separately;
-- closed operational history and document versions are immutable;
-- corrections create new versions/snapshots instead of silently rewriting history;
-- command-oriented REST API for critical state changes;
-- append-only audit and operational event history;
-- PostgreSQL exclusion constraints protect against overlapping vehicle and driver assignments;
-- optimistic locking and idempotency protect concurrent dispatcher operations;
-- outbox events prepare the core for future integrations;
-- tenant/company isolation is enforced throughout the data model.
+Ключові рішення:
 
-## Documentation
+- модульний моноліт для перших production-версій;
+- PostgreSQL як транзакційне джерело істини;
+- `Trip != Duty`: рейс і наряд є різними доменними сутностями;
+- один `Duty` може містити 1..N рейсів;
+- `Release` належить `Duty`;
+- `Waybill` базово належить `Duty` і може охоплювати 1..N рейсів;
+- планові та фактичні дані зберігаються окремо;
+- закрита операційна історія та версії документів є незмінними;
+- виправлення створюють нові версії / snapshots, а не переписують історію;
+- критичні зміни станів виконуються explicit business commands;
+- audit та operational events — append-only;
+- PostgreSQL exclusion constraints блокують часові конфлікти ресурсів;
+- optimistic locking та idempotency захищають конкурентні операції;
+- outbox events закладають основу для майбутніх інтеграцій;
+- tenant/company isolation є частиною моделі даних.
 
-The `/docs` directory is designed to be opened directly as an **Obsidian Vault** while remaining ordinary Markdown readable in GitHub and code editors.
+## Мовна політика
 
-Start at:
+Українська документація є **канонічною**. У разі розбіжності між перекладом та українською версією пріоритет завжди має українська.
 
-- [`PROJECT_STATE.md`](PROJECT_STATE.md) — current project checkpoint;
-- [`ARCHITECTURE_VERSION.md`](ARCHITECTURE_VERSION.md) — architecture baseline;
-- [`docs/_index.md`](docs/_index.md) — documentation index;
-- [`docs/01-Architecture/ADR`](docs/01-Architecture/ADR) — architecture decision records;
-- [`docs/01-Architecture/Business-Rules`](docs/01-Architecture/Business-Rules) — numbered business rules;
-- [`docs/11-Traceability`](docs/11-Traceability) — requirement → rule → API → DB → test traceability.
+Підтримувані мови документації:
 
-## Planned source layout
+- `uk` — українська, основна і нормативна для проєкту;
+- `en` — English;
+- `es` — Español;
+- `fr` — Français;
+- `de` — Deutsch.
+
+Правила перекладів описані в [`docs/i18n/README.md`](docs/i18n/README.md).
+
+## Документація
+
+Папка `/docs` одночасно є **Obsidian Vault** і звичайною Markdown-документацією для GitHub та редакторів коду.
+
+Основні точки входу:
+
+- [`PROJECT_STATE.md`](PROJECT_STATE.md) — актуальний checkpoint проєкту;
+- [`ARCHITECTURE_VERSION.md`](ARCHITECTURE_VERSION.md) — версія архітектурного baseline;
+- [`docs/00-Project/Project-Charter.md`](docs/00-Project/Project-Charter.md) — мета та рамки проєкту;
+- [`docs/01-Architecture/ADR`](docs/01-Architecture/ADR) — Architecture Decision Records;
+- [`docs/02-Data`](docs/02-Data) — модель даних і DB constraints;
+- [`docs/i18n`](docs/i18n) — переклади документації.
+
+## Планована структура коду
 
 ```text
 backend/     FastAPI application
 frontend/    React / Next.js application
 infra/       deployment and infrastructure
-docs/        architecture / product documentation and Obsidian Vault
-templates/   documentation templates
+docs/        канонічна українська документація та Obsidian Vault
+templates/   шаблони документації
 ```
 
-The application source directories will be introduced only after the MVP architecture and contracts are frozen.
+Каталоги application source будуть додані лише після завершення Architecture Freeze та затвердження MVP-контрактів.
