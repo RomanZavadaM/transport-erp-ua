@@ -87,7 +87,7 @@ jobs:
         run: |
           target=docs/03-API/openapi-mvp-v1-consolidated.yaml
           cp .artifacts/openapi/openapi-mvp-v1.yaml "$target"
-          if git diff --quiet -- "$target"; then
+          if [ -z "$(git status --porcelain -- "$target")" ]; then
             echo "Consolidated OpenAPI is already current"
             exit 0
           fi
