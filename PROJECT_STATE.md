@@ -41,7 +41,14 @@ TransportERP-UA — ERP насамперед **одного автотрансп
 
 ### Джерело істини та передача на вищий рівень
 
-Поки дані не передані та central ACK не отримано, **локальна SQLite є джерелом істини** для цих даних.
+Business authority має лише два стани:
+
+- `LOCAL` — локальна SQLite є джерелом істини, local edit дозволений;
+- `CENTRAL` — central ACK отримано, local copy read-only, редагування виконується на central.
+
+**До valid central ACK authority завжди залишається `LOCAL`.**
+
+Transfer workflow має окремі статуси, наприклад `PENDING_APPROVAL`, `TRANSFERRING`, `FAILED`, `ACKNOWLEDGED`, `CANCELLED`. Вони не означають зміну джерела істини.
 
 Передача може бути підготовлена:
 
@@ -51,14 +58,16 @@ TransportERP-UA — ERP насамперед **одного автотрансп
 
 Але фактична передача **завжди підтверджується оператором на локальному вузлі**.
 
-Після успішної передачі та central ACK:
+Після local approval payload/versions фіксуються. На час активної передачі records можуть мати тимчасовий transfer lock, щоб approved data не змінилися в дорозі. Це не зміна authority.
 
+Після успішної передачі та valid central ACK:
+
+- authority переходить `LOCAL → CENTRAL`;
 - передані дані локально стають read-only;
 - local backend забороняє їх зміну;
-- подальше редагування виконується на central;
 - central може повернути новішу read-only версію на local.
 
-Невдала/перервана передача не блокує локальні дані.
+Невдала/перервана передача не переводить authority у `CENTRAL`.
 
 Канонічний ADR: `docs/01-Architecture/ADR/ADR-0007-Local-SQLite-and-Central-Transfer.md`.
 
@@ -73,7 +82,7 @@ Central є опційним вищим рівнем і може використ
 - консолідована звітність;
 - централізоване управління там, де воно потрібне.
 
-Central outage не повинен зупиняти локальну роботу з даними, які ще належать local.
+Central outage не повинен зупиняти локальну роботу з даними authority=`LOCAL`.
 
 ## Frozen domain decisions, які залишаються
 
@@ -117,35 +126,31 @@ Merged to `main` as `d64c765b9ed6ee7acdf1add12fbf4ae26edeeba8`.
 ### M1.4 Identity and access foundation — DONE
 Merged to `main` as `7d17edf737cc344037bed3ee4ade6ecbb689b2cc`.
 
-Залишаються корисними:
-
-- password/session security;
-- RBAC/permissions;
-- CSRF/security patterns для HTTP boundaries;
-- stable error envelope/request ID;
-- identity application/domain separation.
+Залишаються корисними password/session security, RBAC/permissions, stable error envelope/request ID та identity application/domain separation.
 
 PostgreSQL-specific RLS, `SET LOCAL app.company_id`, DB roles та `SECURITY DEFINER` розглядаються як central/server implementation, а не обов'язкова local SQLite dependency.
 
 ## M1.5 — REDEFINED / NEXT
 
-Issue #20 має бути переглянуто під architecture-v1.6.
+Issue #20 переглянуто під architecture-v1.6.
 
 Практичний порядок M1.5:
 
 1. local SQLite database profile + migrations;
 2. application data directories та filesystem storage abstraction;
 3. append-only local audit;
-4. transfer state (`LOCAL/PENDING_APPROVAL/TRANSFERRING/CENTRAL`);
-5. local approval flow у UI/API;
-6. transfer batch + reliable delivery/outbox;
-7. central receipt/ACK contract та idempotent receive;
-8. local read-only enforcement після ACK;
-9. backup/restore local SQLite + files;
-10. lightweight local health/integrity checks;
-11. desktop packaging spike та production launcher behavior;
-12. acceptance tests: offline work, interrupted transfer, ACK lock, backup/restore;
-13. CI green before merge.
+4. authority=`LOCAL|CENTRAL` + transfer lock;
+5. transfer batch status/approval flow;
+6. local approval у UI/API;
+7. reliable delivery/outbox;
+8. central receipt/ACK contract та idempotent receive;
+9. `LOCAL → CENTRAL` тільки після valid ACK;
+10. local read-only enforcement після ACK;
+11. backup/restore local SQLite + files;
+12. lightweight local health/integrity checks;
+13. desktop packaging spike та production launcher behavior;
+14. acceptance tests: offline work, interrupted transfer, ACK lock, backup/restore;
+15. CI green before merge.
 
 Не є M1.5 prerequisites:
 
