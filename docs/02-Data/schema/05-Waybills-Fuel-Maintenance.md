@@ -1,5 +1,7 @@
 # PostgreSQL Schema — Waybills, Fuel, Maintenance & Corrections
 
+Статус: **M0 freeze-aligned physical design**
+
 # Documents / Waybills
 
 ## number_sequences
@@ -24,6 +26,8 @@ Constraints:
 - CHECK next_value > 0.
 
 Number allocation тільки під row lock; `MAX(number)+1` заборонено.
+
+Формат/скидання нумерації є enterprise policy. Уже виданий номер ніколи не reuse-иться. Рекомендований deployment default — серія за типом документа/роком, якщо підприємство не затвердить іншу policy.
 
 ## document_templates
 
@@ -70,6 +74,7 @@ Used template version immutable.
 | id | uuid | PK |
 | company_id | uuid | NOT NULL |
 | duty_id | uuid | NOT NULL |
+| document_role | varchar(40) | NOT NULL DEFAULT `PRIMARY` |
 | series | varchar(30) | NOT NULL |
 | number | bigint | NOT NULL |
 | full_number | varchar(100) | NOT NULL |
@@ -89,9 +94,16 @@ Constraints:
 
 - UNIQUE `(company_id,id)`;
 - UNIQUE `(company_id,full_number)`;
+- CHECK char_length(document_role) > 0;
 - CHECK status IN (`DRAFT`,`GENERATED`,`ISSUED`,`ACTIVE`,`RETURNED`,`CLOSING`,`CLOSED`,`CANCELLED`).
 
-Base MVP policy: partial UNIQUE `(duty_id)` WHERE status <> 'CANCELLED'`, якщо legal/business review не вимагає кілька одночасних waybill на один Duty.
+M0 enterprise default policy: максимум один non-cancelled `PRIMARY` Waybill на Duty:
+
+`UNIQUE (duty_id) WHERE document_role='PRIMARY' AND status <> 'CANCELLED'`.
+
+Це не забороняє майбутні explicit supplementary document roles. Новий role не потребує перепроєктування Waybill aggregate. Correction є новою `waybill_version`, а не другим незалежним `PRIMARY` Waybill.
+
+Waybill є enterprise operational/accounting document; requiredness і role policy визначаються deployment/compliance configuration, якщо specific applicable rule не встановлює інше.
 
 No DELETE closed document.
 
@@ -140,7 +152,9 @@ Constraints:
 
 No runtime UPDATE/DELETE після version finalized; generation metadata transition PENDING→READY/FAILED має бути окремо чітко дозволена або винесена в job table, щоб snapshot/content залишалися immutable.
 
-`waybills.current_version_id` повинен посилатися на version того самого waybill; конкретний composite FK/constraint реалізувати в migration design.
+`waybills.current_version_id` повинен посилатися на version того самого waybill; concrete composite FK/constraint реалізується в migration design.
+
+Historical version зберігає explicit template version/locale через `document_template_version_id`; зміна user locale не regenerates historical PDF.
 
 ---
 
@@ -158,6 +172,10 @@ No runtime UPDATE/DELETE після version finalized; generation metadata trans
 | mime_type | varchar(120) | NOT NULL |
 | size_bytes | bigint | NOT NULL |
 | sha256 | char(64) | NOT NULL |
+| retention_class | varchar(60) | NULL |
+| retain_until | date | NULL |
+| legal_hold | boolean | NOT NULL DEFAULT false |
+| retention_metadata | jsonb | NOT NULL DEFAULT `{}` |
 | created_at | timestamptz | NOT NULL |
 | created_by | uuid | NULL |
 
@@ -167,6 +185,14 @@ Constraints:
 - CHECK size_bytes >=0.
 
 Binary bytes не зберігаються в PostgreSQL; storage S3-compatible/MinIO.
+
+Retention policy class-based:
+
+- один global `retention_days` не використовується;
+- `retain_until` може бути продовжений policy/legal hold workflow;
+- application purge не видаляє object при `legal_hold=true` або до `retain_until`;
+- CLOSED Waybill/history не auto-purge-иться лише через досягнення мінімального строку;
+- final object-lock duration походить із затвердженої enterprise retention matrix.
 
 ## entity_attachments
 
