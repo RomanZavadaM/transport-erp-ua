@@ -56,7 +56,14 @@
   - index/partition strategy;
   - restrictive delete policy;
   - ERD v1;
-  - migration-readiness checklist.
+  - migration-readiness checklist;
+- **UX Flow / Wireframe Package**:
+  - Dispatcher Board як щільний desktop-first operational workspace;
+  - Release Workspace з усіма blocking conditions на одному екрані;
+  - Waybill workflow з version-aware preview/print/correction;
+  - role workspaces для керівника, диспетчера, механіка, медика, водія та адміністратора;
+  - navigation / information architecture;
+  - спільні interaction patterns для conflict, stale data, blocking states, scroll/overflow, keyboard/copy-paste та destructive actions.
 
 ## Відкриті policy items перед rigid DDL/seed
 
@@ -83,12 +90,11 @@
 
 ## Наступні ворота Architecture Freeze
 
-1. **Issue #4 — UX flows / wireframes** на основі Screen Catalog, Operational Day та API contract.
-2. **Issue #5 — production topology, backup/restore та DR**.
-3. **Issue #6 — деталізація i18n resources/document locale contract**.
-4. Regulatory/business review `MR-*` items та розширення traceability.
-5. Фінальний M0 acceptance review.
-6. Лише після M0 freeze — Alembic migration #1 та перший FastAPI module.
+1. **Issue #5 — production topology, backup/restore та disaster recovery**.
+2. **Issue #6 — деталізація i18n resources/document locale contract**.
+3. Regulatory/business review `MR-*` items та розширення traceability.
+4. Фінальний M0 acceptance review.
+5. Лише після M0 freeze — Alembic migration #1 та перший FastAPI module.
 
 ## Repository governance baseline
 
