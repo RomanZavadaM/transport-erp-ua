@@ -1,22 +1,22 @@
-# Architecture Overview
+# Огляд архітектури
 
-## Baseline
+## Базові технологічні рішення
 
-- Modular Monolith.
-- FastAPI backend.
-- PostgreSQL transactional source of truth.
-- React / Next.js frontend.
-- S3-compatible file storage.
-- REST API.
-- Append-only audit and operational event history.
-- Outbox for future integrations.
+- модульний моноліт;
+- FastAPI backend;
+- PostgreSQL як транзакційне джерело істини;
+- React / Next.js frontend;
+- S3-compatible file storage;
+- REST API;
+- append-only audit та operational event history;
+- outbox для майбутніх інтеграцій.
 
-## Core domain flow
+## Основний доменний потік
 
-Schedule → Trip → Duty → assignments → checks → Release → Waybill → execution → close → reporting.
+`Schedule → Trip → Duty → призначення ресурсів → перевірки → Release → Waybill → фактичне виконання → закриття → звітність`.
 
-`Trip` and `Duty` are deliberately separate. One Duty may contain multiple Trips.
+`Trip` і `Duty` навмисно розділені: один наряд може містити кілька рейсів.
 
-## Integrity
+## Цілісність
 
-Critical resource conflicts are enforced in PostgreSQL. Closed history is versioned. Plan and fact are stored separately.
+Критичні конфлікти ресурсів контролює PostgreSQL. Закрита історія версіонується. Планові та фактичні дані зберігаються окремо. Frontend не є джерелом бізнес-рішень — остаточна валідація виконується backend у транзакції та підкріплюється DB constraints.
