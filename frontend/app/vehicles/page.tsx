@@ -54,7 +54,7 @@ export default function VehiclesPage() {
   const [saving, setSaving] = useState(false);
 
   const loadVehicles = useCallback(async () => {
-    const response = await fetch("/vehicles", { cache: "no-store" });
+    const response = await fetch("/api/vehicles", { cache: "no-store" });
     if (!response.ok) throw new Error("Не вдалося завантажити парк автобусів.");
     setVehicles((await response.json()) as Vehicle[]);
   }, []);
@@ -99,7 +99,7 @@ export default function VehiclesPage() {
         vin: form.vin.trim() || null,
         year: form.year.trim() ? Number(form.year) : null,
       };
-      const response = await fetch(editingId ? `/vehicles/${editingId}` : "/vehicles", {
+      const response = await fetch(editingId ? `/api/vehicles/${editingId}` : "/api/vehicles", {
         method: editingId ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
