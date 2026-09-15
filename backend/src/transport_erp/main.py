@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from transport_erp.api.errors import ApiError, api_error_handler
+from transport_erp.api.fleet import router as fleet_router
 from transport_erp.api.health import router as health_router
 from transport_erp.api.local import router as local_router
 from transport_erp.api.security import SecurityContextMiddleware
@@ -23,6 +24,7 @@ def create_app() -> FastAPI:
     application.add_middleware(SecurityContextMiddleware, settings=settings)
     application.include_router(health_router)
     application.include_router(local_router)
+    application.include_router(fleet_router)
     application.include_router(identity_router)
 
     if settings.frontend_dir is not None:
