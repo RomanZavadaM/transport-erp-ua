@@ -67,17 +67,28 @@
 
 ### Production Operations Package
 
-- production topology: application node + data node + independent off-site backup/object-storage failure domain;
-- Docker Compose baseline без Kubernetes;
+- application/data/off-site failure domains;
+- Docker Compose baseline;
 - secrets/configuration policy;
 - PostgreSQL backup + continuous WAL/PITR;
 - object-storage backup/versioning;
-- initial targets: DB RPO ≤ 15 хв, RTO ≤ 4 год; critical object RPO ≤ 1 год;
-- monthly restore drills + quarterly DR exercises;
-- disaster-recovery governance runbook;
-- structured logs/metrics/health/alerts;
+- initial RPO/RTO targets;
+- restore drills та DR exercises;
+- observability/alerts;
 - system integrity checker;
 - production-readiness checklist.
+
+### i18n Contract Package
+
+- `uk` — default/canonical locale;
+- locale resolution і fallback;
+- stable semantic UI resource keys;
+- API/error/permission/state codes не локалізуються;
+- formatting/pluralization/layout rules;
+- document/PDF locale + template version policy;
+- historical PDF не змінюється при зміні UI locale;
+- translation governance/statuses;
+- localization test matrix для `uk/en/es/fr/de`.
 
 ## Відкриті policy items `MR-*`
 
@@ -95,11 +106,10 @@
 
 ## Наступні ворота Architecture Freeze
 
-1. **Issue #6 — i18n resources/document locale contract**.
-2. Regulatory/business review `MR-*` items.
-3. Розширення traceability та M0 acceptance suite.
-4. Фінальний Architecture Freeze review.
-5. Лише після M0 freeze — Alembic migration #1 та перший FastAPI module.
+1. Regulatory/business review `MR-*` items.
+2. Розширення traceability та M0 acceptance suite.
+3. Фінальний Architecture Freeze review.
+4. Лише після M0 freeze — Alembic migration #1 та перший FastAPI module.
 
 ## Repository governance
 
