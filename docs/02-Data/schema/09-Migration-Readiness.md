@@ -1,199 +1,215 @@
 # PostgreSQL Physical Schema v1 — Migration Readiness Review
 
-Статус: **M0 design review**
+Статус: **M0 regulatory review completed 15.09.2026**
 
-Мета: визначити, які рішення вже достатньо стабільні для майбутньої Alembic migration #1, а які потребують окремого підтвердження до написання DDL.
+Мета: визначити, які рішення достатньо стабільні для майбутньої Alembic migration #1 та які deployment policy залишаються конфігураційними.
 
-## 1. Готово до freeze
+## 1. Structural architecture — READY
 
-### Platform
+Готово до freeze:
 
 - PostgreSQL 16+ baseline;
-- extensions: `pgcrypto`, `citext`, `btree_gist`;
-- UUID primary keys, recommended UUIDv7 application generation;
+- `pgcrypto`, `citext`, `btree_gist`;
+- UUID PK;
 - `timestamptz` для instants;
-- tenant `company_id`;
-- RLS strategy;
-- DB runtime/migration/reporting/backup roles;
+- tenant `company_id` + tenant-aware FK/RLS;
+- restrictive delete policy;
 - optimistic `row_version`;
-- restrictive delete policy.
-
-### Core domain boundaries
-
-- Trip ≠ Duty;
-- Duty contains 1..N Trips;
-- planned assignments ≠ actual usage;
-- Release belongs to Duty;
-- plan ≠ fact;
-- closed facts use immutable snapshots;
-- Waybill uses immutable versions;
-- corrections create new versions/snapshots;
-- audit/events append-only.
-
-### Concurrency
-
+- `Trip != Duty`;
+- Duty 1..N Trips;
+- planned assignments != actual usage;
+- Release → Duty;
+- plan != fact;
+- immutable closed snapshots/versions;
+- append-only audit/events;
 - `tstzrange [from,to)`;
-- GiST exclusion for vehicle overlap;
-- GiST exclusion for driver overlap;
-- active Trip membership unique;
+- GiST exclusion resource conflicts;
 - atomic document numbering;
-- row locks + canonical lock ordering;
-- idempotency table.
+- idempotency;
+- route/schedule/check/document versioning;
+- correction workflow;
+- outbox/integrity architecture.
 
-### Versioning
+Physical design covers **77 core tables**.
 
-- route versions with non-overlapping active periods;
-- schedule versions with non-overlapping active periods;
-- versioned check templates;
-- versioned document templates + locale;
-- historical Trip plan snapshot.
+## 2. Regulatory/business review results
 
-### History / evidence
+Повний decision register: [`../../10-Legal/MR-Decision-Register.md`](../../10-Legal/MR-Decision-Register.md).
 
-- immutable trip snapshots;
-- immutable waybill content versions;
-- check invalidation instead of rewriting completed result;
-- release evaluation batches;
-- authorization history;
-- correction cases;
-- audit + partition sealing design.
+### MR-001 — Medical result
 
-## 2. Physical model coverage
+**RESOLVED / CONFIRMED**
 
-Physical design currently covers **77 core tables**.
+Для щозмінного передрейсового workflow normalized result:
 
-Every table belongs to one of:
+```text
+FIT
+UNFIT
+```
 
-- tenant/identity;
-- fleet/drivers;
-- routes/planning;
-- trips;
-- dispatch/duty;
-- release/checks;
-- documents/waybill;
-- fuel;
-- maintenance/repairs;
-- corrections;
-- audit/integration/operations.
+`FIT_WITH_RESTRICTIONS` не включається у rigid result set цього check.
 
-Fields, key constraints, principal indexes and lifecycle policy are documented before DDL generation.
+DB/API consequence:
 
-## 3. Items that MUST be resolved before migration #1
+- `fitness_result` CHECK → `FIT|UNFIT`;
+- `UNFIT` blocks Release;
+- completed check immutable; invalidation + replacement check.
 
-### MR-001 — Exact medical result code set
+### MR-002 — Waybill cardinality
 
-Current design allows conceptually:
+**RESOLVED AS INTERNAL POLICY**
 
-- `FIT`;
-- `UNFIT`;
-- optionally `FIT_WITH_RESTRICTIONS`.
+Закон №2344-III не дає підстав hardcode historical «дорожній лист» як універсально обов'язковий документ для регулярного passenger workflow.
 
-Before a rigid DB CHECK is created, legal/business review must decide the actual allowed set for Ukrainian deployment.
+Architecture decision:
 
-**Rule:** do not invent medical/legal semantics in migration.
+- Waybill залишається enterprise operational/accounting document;
+- рекомендований deployment policy — один `PRIMARY` Waybill на Duty;
+- schema повинна дозволяти explicit document role/type, щоб майбутні додаткові document instances не ламали модель;
+- не використовувати безумовне `UNIQUE(duty_id)` для всіх можливих document roles.
 
-### MR-002 — Waybill cardinality per Duty
+Перед migration implementation треба відобразити `document_role`/equivalent у waybill uniqueness design.
 
-Domain model supports Waybill → 1..N Trips.
+### MR-003 — Driver crew
 
-Open question before partial UNIQUE:
+**RESOLVED STRUCTURALLY**
 
-- exactly one non-cancelled primary Waybill per Duty;
-- or multiple document instances/types may legally/business-wise coexist.
+Чинне Положення №340 передбачає crew driving щонайменше двома водіями.
 
-Until confirmed, migration should not encode an irreversible overly restrictive constraint. If multiple types are required, introduce explicit `waybill_type/document_role` and constrain uniqueness by `(duty_id,type/role)`.
+Architecture consequence:
 
-### MR-003 — Driver crew overlap inside one Duty
+- multiple driver assignments/usage у Duty обов'язкові;
+- global same-driver overlap між Duty заборонений;
+- нормативний `crew_mode` відокремлюється від enterprise labels `PRIMARY/SECOND_DRIVER/RELIEF/TRAINEE`;
+- не створювати regulatory DB invariant «рівно один PRIMARY на весь Duty».
 
-Global invariant is fixed: same driver cannot overlap across Duties.
+### MR-004 — Regulatory document catalog
 
-Need confirm operational crew rules for:
+**RESOLVED AS CONTEXT RULE**
 
-- PRIMARY;
-- SECOND_DRIVER;
-- RELIEF;
-- TRAINEE.
+Стаття 39 Закону №2344-III має різні document requirements за видом перевезення.
 
-Only after this define any additional same-Duty exclusion beyond global driver conflict.
+Architecture consequence:
 
-### MR-004 — Regulatory document type catalog
+- document types залишаються довідниками;
+- `required/blocking` визначається compliance rule version + transport/service context;
+- не seed-ити один глобальний набір `required_for_release=true` для всіх Duty;
+- carrier-level license/contract/route-passport evidence не змішується з `driver_documents`/`vehicle_documents`.
 
-Tables are stable, but exact seeded types and `required_for_release / blocks_release_if_expired` values must come from verified regulatory/business catalog.
+Це потребує rule seed data, але не зміни fundamental schema.
 
-The schema does not block migration, but production seed data cannot be declared final before regulatory review.
+### MR-005 — Operational day cutoff
 
-### MR-005 — Operational day cutoff policy
+**RESOLVED AS INTERNAL POLICY**
 
-`service_date` is explicit and stable.
+- `service_date` explicit і immutable;
+- cutoff optional company setting;
+- зміна cutoff не перераховує history;
+- M0 default: календарний operational date у company timezone без штучного cutoff, доки підприємство не затвердить інше.
 
-Need decide whether automatic generation derives service date using configurable cutoff (e.g. 03:00) or schedule calendar only. This impacts application planning logic more than physical schema; no schema redesign expected.
+### MR-006 — Waybill numbering
 
-### MR-006 — Waybill number format
+**RESOLVED AS INTERNAL POLICY**
 
-Physical sequence supports series/year/prefix/suffix/next_value. Need approve actual numbering format and reset policy before production seeds/configuration, not before table creation.
+- `number_sequences` залишається generic;
+- series/year/prefix/suffix/next_value;
+- issued number never reused;
+- reset/format configurable, не DB law;
+- рекомендований default — series by document type/year, якщо enterprise policy не визначає інакше.
 
-### MR-007 — Object-storage retention / legal retention
+### MR-007 — Retention/object lock
 
-`files` schema is stable. Exact retention/object-lock policy belongs to Issue #5 / regulatory review.
+**RESOLVED ARCHITECTURALLY / LEGAL POLICY BEFORE PRODUCTION**
 
-## 4. Items explicitly NOT blockers for migration #1
+- retention by data/document class;
+- no automatic purge of CLOSED history;
+- legal hold/extended retention supported;
+- primary accounting documents юридичної особи повинні враховувати applicable tax minimum (для відповідної категорії 1825 днів) та довші строки, якщо вони застосовуються;
+- object-lock duration задається затвердженою enterprise retention matrix.
 
-- GPS schema;
+Retention matrix є production configuration/legal deliverable, але не blocker для створення core tables.
+
+## 3. Додаткові regulatory corrections до design
+
+### Technical checker
+
+Наказ №974 не обмежує виконавця єдиною нормативною роллю «механік».
+
+Implementation rule:
+
+- domain concept: authorized/qualified `technical_checker`;
+- UI role `MECHANIC` може надавати permission `technical_check.perform`;
+- driver pre-departure technical check/evidence моделюється окремо від іншої technical inspection;
+- failed/blocking technical result blocks Release.
+
+### Route passport external identity
+
+Новий Порядок, чинний з 13.07.2026, переводить route passports до державного Єдиного комплексу.
+
+Core migration не повинна дублювати зовнішній registry, але future integration має мати external identifier/reference/sync metadata.
+
+Це post-MVP integration і не блокує migration #1.
+
+## 4. Що залишається до migration #1
+
+Не normative unknowns, а implementation preparation:
+
+1. відобразити `waybill document_role/type` у detailed DDL design;
+2. уточнити technical driver-predeparture evidence table/field mapping;
+3. сформувати context-aware compliance seed structure;
+4. затвердити stable technical permission/status seed list;
+5. створити migration acceptance tests;
+6. написати Alembic migration тільки **після фінального M0 Architecture Freeze**.
+
+## 5. Не blockers для migration #1
+
+- GPS;
 - ticketing;
 - payroll;
-- accounting;
-- warehouse;
-- external partner API;
-- advanced analytics.
+- accounting integration;
+- parts warehouse;
+- external route-passport API integration;
+- advanced analytics;
+- final legal retention matrix values.
 
-They are separate future bounded contexts and must not inflate core migration.
+## 6. DDL generation order
 
-## 5. DDL generation rules
+1. extensions;
+2. root/reference tables;
+3. tenant/identity;
+4. fleet/drivers/routes/planning;
+5. trips/duties;
+6. release/checks;
+7. files/templates/waybills;
+8. fuel/maintenance/corrections;
+9. audit/outbox/system;
+10. cyclic/deferred current-version FK;
+11. exclusions/specialized indexes;
+12. RLS;
+13. grants/immutable protections;
+14. partitions;
+15. stable technical seeds;
+16. schema acceptance tests.
 
-When migration #1 is written later:
+## 7. Migration acceptance tests
 
-1. create extensions;
-2. create global/root reference tables;
-3. create tenant/identity roots;
-4. create fleet/drivers/routes/planning;
-5. create trips/duties;
-6. create release/checks;
-7. create files/templates/waybills;
-8. create fuel/maintenance/corrections;
-9. create audit/outbox/system;
-10. add cyclic/deferred FK such as effective/current version pointers;
-11. add exclusion constraints and specialized indexes;
-12. enable RLS/policies;
-13. apply grants/immutable protections;
-14. create partitions/default partition strategy;
-15. seed only stable technical dictionaries/permissions;
-16. run schema acceptance tests.
+Migration #1 повинна довести:
 
-## 6. Migration acceptance tests
-
-Migration #1 is acceptable only if automated PostgreSQL tests prove:
-
-- clean database upgrades to head;
-- expected extensions enabled;
-- all PK/FK/UNIQUE/CHECK/EXCLUDE exist;
-- cross-company composite FK rejected;
-- vehicle overlap rejected;
-- driver overlap rejected;
+- clean DB upgrades to head;
+- expected extensions;
+- PK/FK/UNIQUE/CHECK/EXCLUDE;
+- cross-company FK rejected;
+- resource overlap rejected;
 - duplicate generated Trip rejected;
 - duplicate Waybill number rejected;
-- runtime role cannot UPDATE/DELETE immutable tables;
-- runtime role cannot bypass RLS;
-- tenant A cannot read/write tenant B rows;
-- closed historical evidence survives correction flow;
-- migration can be recreated from an empty database reproducibly.
+- invalid medical result rejected;
+- runtime role cannot mutate immutable history;
+- RLS tenant isolation;
+- context-rule seed structure is reproducible;
+- migration recreates schema from empty DB reproducibly.
 
-## 7. Architecture freeze decision
+## 8. Freeze decision
 
-Issue #3 може бути закритий після review цього design, тому що structural physical schema визначена.
+Після regulatory review **немає невирішеної нормативної невизначеності, яка вимагала б перепроєктування core aggregates**.
 
-`MR-*` items переходять у regulatory/business configuration review і повинні бути вирішені **до написання відповідного rigid constraint/seed**, а не шляхом припущення.
-
-Це дозволяє не змішувати два різні типи невизначеності:
-
-- **архітектурна** — уже вирішена;
-- **нормативна/операційна політика** — повинна бути підтверджена джерелом або власником процесу.
+Залишаються enterprise configuration/policy values, які повинні бути versioned/configurable і затверджуватися без зміни фундаментальної архітектури.
