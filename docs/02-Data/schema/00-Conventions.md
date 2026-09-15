@@ -147,20 +147,28 @@ SQLite trigger / PostgreSQL grants+trigger можуть додатково за�
 
 Не створювати trigger spaghetti для звичайної бізнес-логіки.
 
-## 13. Authority columns/registry
+## 13. Authority та transfer lock
 
-Transferable records повинні мати доступний backend-у authority state без дорогого/неоднозначного inference.
+Transferable aggregate root повинен мати доступний backend-у business authority без дорогого inference.
 
-Дозволені реалізації:
+Рекомендований local physical pattern:
 
-- `authority_state`/central version metadata на aggregate root; або
-- нормалізована `record_authority` registry.
+- `authority` = `LOCAL | CENTRAL`;
+- `transfer_lock_batch_id` nullable;
+- `central_version` nullable;
+- `central_ack_id` nullable;
+- `central_synced_at` nullable.
 
-Остаточний physical choice робиться M1.5 після prototype з урахуванням query simplicity.
+Правила:
 
-Обов’язкова semantics однакова:
+- authority не змінюється при `PENDING_APPROVAL`, `TRANSFERRING` або `FAILED`;
+- до verified central ACK authority=`LOCAL`;
+- після local approval `transfer_lock_batch_id` може тимчасово блокувати ordinary business edit approved records;
+- failed/cancelled transfer може зняти temporary lock без зміни authority;
+- тільки verified ACK переводить `authority: LOCAL → CENTRAL`;
+- authority=`CENTRAL` означає постійний local read-only для business mutation.
 
-`LOCAL → PENDING_APPROVAL → TRANSFERRING → CENTRAL`.
+Transfer-batch status зберігається в `transfer_batches`, а не підмінює authority record-а.
 
 ## 14. Index naming
 
