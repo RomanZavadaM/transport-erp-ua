@@ -1,7 +1,19 @@
-# ADR-0005 — Command API
+# ADR-0005 — Командний API для критичних операцій
 
-Status: Accepted.
+## Статус
+Прийнято.
 
-Critical state changes use explicit business commands instead of generic status updates.
+## Рішення
+Критичні зміни станів виконуються через явні бізнес-команди, а не через універсальне редагування поля `status`.
 
-Examples: assign vehicle, authorize release, issue waybill, close trip.
+## Приклади
+- призначити автобус;
+- призначити водія;
+- дозволити випуск;
+- видати шляховий лист;
+- зафіксувати виїзд;
+- зафіксувати повернення;
+- закрити рейс або наряд.
+
+## Наслідки
+Кожна команда має власні guards, permission, transaction boundary, audit та стабільні business error codes.
