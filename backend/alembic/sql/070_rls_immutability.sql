@@ -3,8 +3,9 @@ RETURNS trigger
 LANGUAGE plpgsql
 AS $$
 BEGIN
-    RAISE EXCEPTION '% is append-only; % is not allowed', TG_TABLE_NAME, TG_OP
-        USING ERRCODE = '55000';
+    RAISE EXCEPTION USING
+        MESSAGE = TG_TABLE_NAME || ' is append-only; ' || TG_OP || ' is not allowed',
+        ERRCODE = '55000';
 END;
 $$;
 
@@ -124,27 +125,20 @@ BEGIN
           AND table_name = rec.table_name
           AND column_name = 'company_id';
 
-        EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', rec.table_name);
+        EXECUTE 'ALTER TABLE ' || quote_ident(rec.table_name)
+            || ' ENABLE ROW LEVEL SECURITY';
 
         IF nullable_company THEN
-            EXECUTE format(
-                'CREATE POLICY tenant_visible ON %I FOR SELECT USING '
-                || '(company_id IS NULL OR company_id = app_current_company_id())',
-                rec.table_name
-            );
-            EXECUTE format(
-                'CREATE POLICY tenant_write ON %I FOR ALL USING '
-                || '(company_id = app_current_company_id()) WITH CHECK '
-                || '(company_id = app_current_company_id())',
-                rec.table_name
-            );
+            EXECUTE 'CREATE POLICY tenant_visible ON ' || quote_ident(rec.table_name)
+                || ' FOR SELECT USING '
+                || '(company_id IS NULL OR company_id = app_current_company_id())';
+            EXECUTE 'CREATE POLICY tenant_write ON ' || quote_ident(rec.table_name)
+                || ' FOR ALL USING (company_id = app_current_company_id())'
+                || ' WITH CHECK (company_id = app_current_company_id())';
         ELSE
-            EXECUTE format(
-                'CREATE POLICY tenant_isolation ON %I USING '
-                || '(company_id = app_current_company_id()) WITH CHECK '
-                || '(company_id = app_current_company_id())',
-                rec.table_name
-            );
+            EXECUTE 'CREATE POLICY tenant_isolation ON ' || quote_ident(rec.table_name)
+                || ' USING (company_id = app_current_company_id())'
+                || ' WITH CHECK (company_id = app_current_company_id())';
         END IF;
     END LOOP;
 END;
