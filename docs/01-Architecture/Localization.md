@@ -1,54 +1,56 @@
 # Локалізація системи
 
-## Підтримувані локалі MVP-архітектури
+Статус: **M0 i18n contract**
 
-`uk`, `en`, `es`, `fr`, `de`.
+## Канонічна locale
 
-Українська є locale за замовчуванням.
+`uk` — default і canonical locale TransportERP-UA.
+
+Підтримувані locale системи:
+
+- `uk`;
+- `en`;
+- `es`;
+- `fr`;
+- `de`.
+
+## Архітектурний принцип
+
+Мова не створює окремої бізнес-логіки.
+
+Однаковими для всіх locale залишаються:
+
+- state machines;
+- permissions;
+- validation/business rules;
+- API paths/codes;
+- DB status values;
+- event names;
+- entity identifiers.
+
+## Детальний контракт
+
+- [Locale Resource Contract](i18n/Locale-Resource-Contract.md) — locale resolution, UI resources, formatting, stable API/DB codes;
+- [Document Locale Contract](i18n/Document-Locale-Contract.md) — document/PDF locale, template versions, historical immutability;
+- [Translation Governance](i18n/Translation-Governance.md) — source-of-truth, statuses, glossary, review;
+- [Localization Testing Matrix](i18n/Localization-Testing.md) — UI/API/PDF test coverage.
 
 ## Frontend
 
-Інтерфейс використовує ключі перекладу, наприклад:
+Інтерфейс використовує stable translation keys. Components не зберігають окремі hardcoded тексти для кожної мови.
 
-```text
-release.status.blocked
-waybill.action.issue
-trip.error.vehicle_conflict
-```
+## API
 
-Компоненти не повинні містити бізнес-тексти, продубльовані п'ятьма мовами.
+Backend повертає stable machine-readable codes. Locale не змінює `error.code`, permission або state value.
 
-## Backend / API
+## Database
 
-Backend повертає стабільні коди:
+Technical values не перекладаються. Реальні назви маршруту, зупинки, підприємства тощо є domain data, а не UI resources.
 
-```text
-VEHICLE_TIME_CONFLICT
-RELEASE_NOT_READY
-CONCURRENT_MODIFICATION
-```
+## PDF / документи
 
-Код є частиною API-контракту. Людинозрозумілий текст може локалізуватися frontend або спеціальним presentation layer.
-
-## База даних
-
-Не перекладаємо технічні status values у БД. Наприклад `CLOSED` залишається `CLOSED` для всіх мов.
-
-Назви маршрутів, зупинок, підприємств та інші реальні бізнес-дані зберігаються як доменні дані, а не як UI-переклади.
-
-Для майбутньої багатомовності довідникових назв за потреби можна додати окремі translation tables, не змінюючи ідентичність сутності.
-
-## PDF та документи
-
-`document_template_versions` повинні мати locale. Українська форма документа є первинною для українського підприємства. Перекладений документ є окремою версією шаблону, а не автоматичною заміною тексту в юридично значимій формі.
+`document_template_versions` мають explicit locale/version. Зміна user locale не змінює вже створений historical PDF або snapshot.
 
 ## Форматування
 
-Локалізуються:
-
-- дати й час у UI;
-- числа та валюти;
-- назви місяців;
-- повідомлення й підписи.
-
-У БД дата/час і числа зберігаються у нейтральних типах та не залежать від locale.
+Presentation layer локалізує дати, час, числа, валюту, pluralization і labels. PostgreSQL/API зберігають typed neutral values.

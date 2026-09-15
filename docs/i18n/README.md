@@ -4,7 +4,7 @@
 
 **Українська (`uk`) є основною та канонічною мовою TransportERP-UA.**
 
-Усі архітектурні рішення, бізнес-правила, state machines, acceptance criteria, юридичні вимоги та API-контракти спочатку затверджуються українською.
+Усі архітектурні рішення, бізнес-правила, state machines, acceptance criteria, API-контракти та затверджені інтерпретації вимог спочатку фіксуються українською.
 
 ## Підтримувані переклади
 
@@ -15,18 +15,51 @@
 
 Переклади зберігаються у `docs/i18n/<lang>/`.
 
-## Правило пріоритету
+## Пріоритет
 
-Якщо переклад суперечить українському оригіналу, **чинною вважається українська версія**.
+Якщо переклад суперечить українському оригіналу, чинним є український source.
 
-Переклад не створює нової бізнес-вимоги і не може змінювати зміст канонічного документа.
+Переклад не створює нової бізнес-вимоги й не змінює semantic meaning canonical документа.
 
-## Версіювання перекладів
+## Application i18n contract
 
-Кожен переклад повинен вказувати:
+Детальна системна політика:
 
-- шлях до канонічного українського документа;
-- версію або commit, з якого виконаний переклад;
-- статус перекладу: `current`, `needs-review` або `outdated`.
+- [`Locale-Resource-Contract.md`](../01-Architecture/i18n/Locale-Resource-Contract.md) — UI resources, locale resolution, formatting, stable API/DB codes;
+- [`Document-Locale-Contract.md`](../01-Architecture/i18n/Document-Locale-Contract.md) — PDF/document templates, locale/version, historical immutability;
+- [`Translation-Governance.md`](../01-Architecture/i18n/Translation-Governance.md) — source-of-truth, review/status, glossary, stable identifiers;
+- [`Localization-Testing.md`](../01-Architecture/i18n/Localization-Testing.md) — locale/layout/API/PDF test matrix.
 
-Архітектурний freeze перевіряє український документ. Переклади можуть оновлюватися після нього без зміни змісту системи.
+## Статуси перекладів
+
+- `current`;
+- `needs-review`;
+- `outdated`.
+
+## Metadata перекладу
+
+Переклад повинен вказувати:
+
+- canonical source path;
+- source commit/version;
+- translation status.
+
+## Stable technical identifiers
+
+Не перекладаються:
+
+- API paths;
+- JSON field names;
+- error codes;
+- permissions;
+- DB names;
+- state values;
+- event names;
+- translation keys;
+- `BR-*`, `AT-*`, ADR IDs.
+
+## Architecture Freeze
+
+M0 freeze перевіряє українську canonical документацію та сам i18n contract.
+
+Похідні переклади можуть оновлюватися після freeze без зміни архітектури, якщо не змінюють canonical meaning.
