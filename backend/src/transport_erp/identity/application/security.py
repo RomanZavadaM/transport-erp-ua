@@ -52,7 +52,7 @@ def generate_session_token() -> str:
 
 
 def hash_session_token(token: str) -> str:
-    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+    return hashlib.sha256(token.encode()).hexdigest()
 
 
 def encode_session_cookie(company_id: UUID, token: str) -> str:
@@ -67,5 +67,5 @@ def parse_session_cookie(value: str) -> ParsedSessionCookie:
 
 
 def derive_csrf_token(session_cookie_value: str) -> str:
-    payload = f"csrf:{session_cookie_value}".encode("utf-8")
+    payload = f"csrf:{session_cookie_value}".encode()
     return hashlib.sha256(payload).hexdigest()

@@ -16,7 +16,9 @@ def _edrpou() -> str:
     return f"{uuid4().int % 100_000_000:08d}"
 
 
-def _create_company(pg: Connection[tuple[object, ...]], *, status: str = "ACTIVE") -> tuple[UUID, str]:
+def _create_company(
+    pg: Connection[tuple[object, ...]], *, status: str = "ACTIVE"
+) -> tuple[UUID, str]:
     edrpou = _edrpou()
     row = pg.execute(
         """

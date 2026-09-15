@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from ipaddress import ip_address
 from typing import Annotated
 from uuid import UUID
 
@@ -80,7 +81,12 @@ def _role_view(role: RoleRecord) -> RoleView:
 
 
 def _client_ip(request: Request) -> str | None:
-    return request.client.host if request.client is not None else None
+    if request.client is None:
+        return None
+    try:
+        return str(ip_address(request.client.host))
+    except ValueError:
+        return None
 
 
 def _set_session_cookies(
