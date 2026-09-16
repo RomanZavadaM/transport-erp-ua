@@ -59,6 +59,14 @@ jobs:
             --collect-all webview `
             "backend/src/transport_erp/desktop.py"
 
+      - name: Smoke test packaged application
+        shell: pwsh
+        run: |
+          & "dist/TransportERP-UA-Preview/TransportERP-UA-Preview.exe" --smoke-test
+          if ($LASTEXITCODE -ne 0) {
+            throw "Packaged TransportERP-UA preview failed smoke test with exit code $LASTEXITCODE"
+          }
+
       - name: Add preview notes
         shell: pwsh
         run: |
