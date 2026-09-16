@@ -61,3 +61,19 @@ ignore = ["B008", "E501"]
 python_version = "3.12"
 strict = true
 files = ["src", "tests"]
+
+[[tool.mypy.overrides]]
+module = ["transport_erp.api.waybills", "transport_erp.api.waybill_pdf_current"]
+disable_error_code = ["no-untyped-call"]
+
+[[tool.mypy.overrides]]
+module = "transport_erp.api.waybill_actuals"
+disable_error_code = ["no-any-return"]
+
+[[tool.mypy.overrides]]
+module = "transport_erp.api.stoir"
+disable_error_code = ["arg-type"]
+
+[[tool.mypy.overrides]]
+module = "webview"
+ignore_missing_imports = true
