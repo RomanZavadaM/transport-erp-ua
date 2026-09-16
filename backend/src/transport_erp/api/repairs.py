@@ -4,7 +4,7 @@ import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
-from typing import Literal
+from typing import Literal, cast
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException
@@ -205,10 +205,10 @@ def _defect_from_row(row: sqlite3.Row) -> DefectResponse:
         reported_at=datetime.fromisoformat(str(row["reported_at"])),
         reported_by=str(row["reported_by"]) if row["reported_by"] is not None else None,
         source=str(row["source"]),
-        severity=str(row["severity"]),
+        severity=cast(Severity, str(row["severity"])),
         description=str(row["description"]),
         blocks_release=bool(row["blocks_release"]),
-        status=str(row["status"]),
+        status=cast(DefectStatus, str(row["status"])),
         note=str(row["note"]) if row["note"] is not None else None,
         resolved_at=(datetime.fromisoformat(str(row["resolved_at"])) if row["resolved_at"] else None),
     )
@@ -222,7 +222,7 @@ def _items(connection: sqlite3.Connection, order_id: str) -> list[RepairItemResp
     return [
         RepairItemResponse(
             id=str(row["id"]),
-            item_type=str(row["item_type"]),
+            item_type=cast(ItemType, str(row["item_type"])),
             description=str(row["description"]),
             part_number=str(row["part_number"]) if row["part_number"] is not None else None,
             quantity=float(row["quantity"]),
@@ -241,7 +241,7 @@ def _order_from_row(connection: sqlite3.Connection, row: sqlite3.Row) -> RepairO
         vehicle_id=str(row["vehicle_id"]),
         defect_id=str(row["defect_id"]) if row["defect_id"] is not None else None,
         number=str(row["number"]),
-        status=str(row["status"]),
+        status=cast(RepairStatus, str(row["status"])),
         blocks_operation=bool(row["blocks_operation"]),
         opened_at=datetime.fromisoformat(str(row["opened_at"])),
         started_at=datetime.fromisoformat(str(row["started_at"])) if row["started_at"] else None,
@@ -279,7 +279,7 @@ def _require_order(connection: sqlite3.Connection, order_id: str) -> sqlite3.Row
     row = connection.execute("SELECT * FROM repair_orders WHERE id = ?", (order_id,)).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail="Ремонтний наряд не знайдено.")
-    return row
+    return cast(sqlite3.Row, row)
 
 
 def _refresh_vehicle_status(connection: sqlite3.Connection, vehicle_id: str) -> None:
