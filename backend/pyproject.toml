@@ -47,6 +47,9 @@ line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+# B008 flags FastAPI's standard Query(...) dependency/default pattern.
+# E501 is formatting only and must not block functional preview builds.
+ignore = ["B008", "E501"]
 
 [tool.mypy]
 python_version = "3.12"
