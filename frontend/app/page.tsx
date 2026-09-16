@@ -5,7 +5,7 @@ const operationalModules = [
   { title: "Водії", description: "Картки водіїв, документи, допуски та статус.", href: "/drivers/", ready: true },
   { title: "Маршрути", description: "Маршрути та впорядковані списки зупинок.", href: "/routes/", ready: true },
   { title: "Наряди і рейси", description: "Розклад, рейси на дату та призначення автобуса і водія.", href: "/operations/", ready: true },
-  { title: "Випуск на лінію", description: "Медичний, технічний контроль і дозвіл диспетчера.", href: "#", ready: false },
+  { title: "Випуск на лінію", description: "Медичний, технічний контроль і дозвіл диспетчера.", href: "/release/", ready: true },
   { title: "Шляхові листи", description: "Формування, друк, повернення та закриття.", href: "#", ready: false },
 ];
 
