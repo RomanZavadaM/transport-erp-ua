@@ -4,10 +4,10 @@ Date: 2026-09-16
 
 ## Current development version
 
-- Version: **v0.2 TEST r4**.
-- Working branch: `work/v0.2-python-preview-r4`.
-- Detailed checkpoint: `CHECKPOINT_v0_2_r4.md`.
-- Primary manual-test package: `TransportERP-UA_v0.2_TEST_r4_START.zip`.
+- Version: **v0.2 TEST r5**.
+- Working branch: `work/v0.2-python-preview-r5`.
+- Detailed checkpoint: `CHECKPOINT_v0_2_r5.md`.
+- Primary manual-test package: `TransportERP-UA_v0.2_TEST_r5_START.zip`.
 - Daily development launch: `START_WINDOWS.bat` in a per-version Python `.venv`.
 - Windows EXE remains a periodic control build only, normally every 5–10 working revisions or at a stable milestone.
 
@@ -39,15 +39,21 @@ Use `OPEN_DATA_FOLDER.bat` to open the persistent data directory.
 - waybill creation only from a released duty;
 - unique waybill number and one waybill per duty;
 - waybill list/detail screens;
-- **full two-page Taxo 1-АП vector PDF renderer** adapted to TransportERP data;
-- `PDF 1-АП` action from the waybill list;
-- generated PDFs stored outside the program version under the persistent documents directory.
+- full two-page Taxo 1-АП vector PDF renderer;
+- `PDF 1-АП` action and persistent PDF storage;
+- factual departure and return recording;
+- odometer at departure/return with calculated mileage;
+- fuel at departure / issued / remaining with calculated consumption;
+- waybill close command requiring essential factual values;
+- closing the waybill completes its duty and trips;
+- closed waybill factual data are read-only;
+- closing automatically writes departure/return odometer readings into vehicle history.
 
 ## Taxo / TransportERP boundary
 
 - **Taxo** remains the specialised driver-worktime subsystem: tachograph/tachocard reading, work/driving/rest analysis, Regulation №340 checks, shift schedules, timesheets and activity attestations.
 - **TransportERP-UA** owns fleet operations and technical/document workflow: fleet, routes/trips/duties, release, waybills, mileage, fuel, maintenance, repairs and fleet documentation.
-- Do not duplicate Taxo tachograph/worktime functionality in TransportERP. Keep driver/vehicle/route/date/duty/trip identifiers and integration points compatible for future connection.
+- Do not duplicate Taxo tachograph/worktime functionality in TransportERP. Keep driver/vehicle/route/date/duty/trip integration points compatible for future connection.
 
 ## Packaging rule
 
@@ -55,12 +61,12 @@ Every START ZIP has a unique version/revision in both the ZIP filename and its r
 
 ## Verified build
 
-GitHub Actions run `35140672263` passed backend tests, frontend lint/typecheck/build, Taxo-style waybill PDF generation and START package creation.
+GitHub Actions run `35141482809` passed backend lint/typecheck/tests, frontend lint/typecheck/build and START package creation for r5.
 
 ## Next step
 
-Continue with the practical completion of the trip document workflow:
+Improve the factual document output and fleet workflow without duplicating Taxo:
 
-`фактичний виїзд → фактичне повернення → одометр/пробіг → паливо → закриття шляхівки`.
-
-Do not expand Taxo-owned worktime/tachograph functionality inside TransportERP.
+1. carry factual odometer/mileage/fuel into the 1-АП PDF;
+2. add structured fuel operation history;
+3. begin technical maintenance / repair workflow from the vehicle card.
