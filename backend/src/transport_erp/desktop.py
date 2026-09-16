@@ -68,13 +68,39 @@ def _check_local_api(base_url: str) -> None:
             raise RuntimeError("TransportERP-UA bundled frontend check failed")
 
 
+def _run_packaged_preflight(frontend_dir: Path) -> None:
+    """Validate the frozen runtime without starting GUI/server threads."""
+    if not (frontend_dir / "index.html").is_file():
+        raise RuntimeError("Bundled frontend index.html is missing")
+
+    from transport_erp.config import get_settings
+    from transport_erp.local_runtime import ensure_local_storage
+
+    settings = get_settings()
+    ensure_local_storage(settings)
+    if not settings.local_database_path.is_file():
+        raise RuntimeError("Local SQLite database was not initialized")
+
+    # Import the fully wired FastAPI application after the packaged environment
+    # is configured. This validates packaged imports and static frontend mounting.
+    from transport_erp.main import app as application
+
+    if application is None:
+        raise RuntimeError("FastAPI application was not initialized")
+
+
 def main() -> None:
     frontend_dir = _find_frontend_dir()
-    port = _free_port()
 
     os.environ.setdefault("TRANSPORT_ERP_DEPLOYMENT_PROFILE", "local")
     os.environ.setdefault("TRANSPORT_ERP_ENVIRONMENT", "local")
     os.environ["TRANSPORT_ERP_FRONTEND_DIR"] = str(frontend_dir)
+
+    if os.getenv("TRANSPORT_ERP_SMOKE_TEST_ONLY") == "1":
+        _run_packaged_preflight(frontend_dir)
+        return
+
+    port = _free_port()
 
     # Import only after the desktop environment is configured so the packaged
     # FastAPI app mounts the bundled static frontend on first initialization.
@@ -94,10 +120,6 @@ def main() -> None:
     base_url = f"http://127.0.0.1:{port}"
     _wait_until_ready(f"{base_url}/health/live")
     _check_local_api(base_url)
-
-    if os.getenv("TRANSPORT_ERP_SMOKE_TEST_ONLY") == "1":
-        server.should_exit = True
-        os._exit(0)
 
     try:
         import webview
