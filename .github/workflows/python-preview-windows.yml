@@ -8,6 +8,8 @@ on:
       - PREVIEW_VERSION.txt
       - START_WINDOWS.bat
       - README-PYTHON-PREVIEW.txt
+      - CHECKPOINT_CURRENT.md
+      - CHECKPOINT_v0_2_r1.md
       - backend/**
       - frontend/**
       - .github/workflows/python-preview-windows.yml
@@ -75,6 +77,8 @@ jobs:
           Copy-Item "START_WINDOWS.bat" "$env:PACKAGE_DIR\START_WINDOWS.bat"
           Copy-Item "README-PYTHON-PREVIEW.txt" "$env:PACKAGE_DIR\README-PYTHON-PREVIEW.txt"
           Copy-Item "PREVIEW_VERSION.txt" "$env:PACKAGE_DIR\PREVIEW_VERSION.txt"
+          Copy-Item "CHECKPOINT_CURRENT.md" "$env:PACKAGE_DIR\CHECKPOINT_CURRENT.md"
+          Copy-Item "CHECKPOINT_v0_2_r1.md" "$env:PACKAGE_DIR\CHECKPOINT_v0_2_r1.md"
           Copy-Item "backend" "$env:PACKAGE_DIR\backend" -Recurse
           Copy-Item "frontend\out\*" "$env:PACKAGE_DIR\frontend\out" -Recurse
 
