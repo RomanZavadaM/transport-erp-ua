@@ -1,8 +1,38 @@
 from __future__ import annotations
 
+from collections.abc import Generator
+from pathlib import Path
+
+import pytest
 from fastapi.testclient import TestClient
 
-from tests.test_local_app import _create_vehicle, local_client as _local_client  # noqa: F401
+from tests.test_local_app import _create_vehicle
+from transport_erp.config import get_settings
+from transport_erp.infrastructure.database import get_engine, get_session_factory
+from transport_erp.main import create_app
+
+
+def _clear_runtime_caches() -> None:
+    get_session_factory.cache_clear()
+    get_engine.cache_clear()
+    get_settings.cache_clear()
+
+
+@pytest.fixture
+def local_client(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> Generator[TestClient, None, None]:
+    monkeypatch.setenv("TRANSPORT_ERP_DEPLOYMENT_PROFILE", "local")
+    monkeypatch.setenv("TRANSPORT_ERP_ENVIRONMENT", "test")
+    monkeypatch.setenv("TRANSPORT_ERP_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.delenv("TRANSPORT_ERP_DATABASE_URL", raising=False)
+    monkeypatch.delenv("TRANSPORT_ERP_FRONTEND_DIR", raising=False)
+    _clear_runtime_caches()
+    client = TestClient(create_app())
+    yield client
+    client.close()
+    _clear_runtime_caches()
 
 
 def _set_odometer(client: TestClient, vehicle_id: str, reading: int) -> None:
@@ -13,11 +43,11 @@ def _set_odometer(client: TestClient, vehicle_id: str, reading: int) -> None:
     assert response.status_code == 201
 
 
-def test_stoir_uses_existing_vehicle_odometer(_local_client: TestClient) -> None:
-    vehicle_id = _create_vehicle(_local_client)
-    _set_odometer(_local_client, vehicle_id, 104_600)
+def test_stoir_uses_existing_vehicle_odometer(local_client: TestClient) -> None:
+    vehicle_id = _create_vehicle(local_client)
+    _set_odometer(local_client, vehicle_id, 104_600)
 
-    created = _local_client.post(
+    created = local_client.post(
         f"/api/vehicles/{vehicle_id}/stoir/plans",
         json={
             "plan_kind": "MAINTENANCE",
@@ -42,10 +72,10 @@ def test_stoir_uses_existing_vehicle_odometer(_local_client: TestClient) -> None
     assert body["state"] == "DUE_SOON"
 
 
-def test_quarterly_inspection_plan_calculates_next_date(_local_client: TestClient) -> None:
-    vehicle_id = _create_vehicle(_local_client)
+def test_quarterly_inspection_plan_calculates_next_date(local_client: TestClient) -> None:
+    vehicle_id = _create_vehicle(local_client)
 
-    created = _local_client.post(
+    created = local_client.post(
         f"/api/vehicles/{vehicle_id}/stoir/plans",
         json={
             "plan_kind": "INSPECTION",
@@ -67,11 +97,11 @@ def test_quarterly_inspection_plan_calculates_next_date(_local_client: TestClien
 
 
 def test_completed_maintenance_advances_mileage_and_writes_history(
-    _local_client: TestClient,
+    local_client: TestClient,
 ) -> None:
-    vehicle_id = _create_vehicle(_local_client)
-    _set_odometer(_local_client, vehicle_id, 104_700)
-    created = _local_client.post(
+    vehicle_id = _create_vehicle(local_client)
+    _set_odometer(local_client, vehicle_id, 104_700)
+    created = local_client.post(
         f"/api/vehicles/{vehicle_id}/stoir/plans",
         json={
             "plan_kind": "MAINTENANCE",
@@ -90,7 +120,7 @@ def test_completed_maintenance_advances_mileage_and_writes_history(
     assert created.status_code == 201
     plan_id = created.json()["id"]
 
-    completed = _local_client.post(
+    completed = local_client.post(
         f"/api/stoir/plans/{plan_id}/complete",
         json={
             "completed_date": "2026-09-16",
@@ -115,9 +145,9 @@ def test_completed_maintenance_advances_mileage_and_writes_history(
     assert event["outcome"] == "COMPLETED"
 
 
-def test_otk_protocol_validity_becomes_next_due_date(_local_client: TestClient) -> None:
-    vehicle_id = _create_vehicle(_local_client)
-    created = _local_client.post(
+def test_otk_protocol_validity_becomes_next_due_date(local_client: TestClient) -> None:
+    vehicle_id = _create_vehicle(local_client)
+    created = local_client.post(
         f"/api/vehicles/{vehicle_id}/stoir/plans",
         json={
             "plan_kind": "OTK",
@@ -136,7 +166,7 @@ def test_otk_protocol_validity_becomes_next_due_date(_local_client: TestClient) 
     assert created.status_code == 201
     plan_id = created.json()["id"]
 
-    completed = _local_client.post(
+    completed = local_client.post(
         f"/api/stoir/plans/{plan_id}/complete",
         json={
             "completed_date": "2026-09-20",
