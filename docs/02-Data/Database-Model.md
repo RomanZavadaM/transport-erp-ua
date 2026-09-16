@@ -1,12 +1,15 @@
 # Модель бази даних
 
-PostgreSQL є транзакційним джерелом істини TransportERP-UA.
+TransportERP-UA має **одну логічну бізнес-модель** і два physical profiles:
 
-Цей файл є оглядовою вхідною сторінкою. Детальна фізична модель M0 знаходиться у [`schema/`](schema/) та зведена в [`schema/Table-Catalog.md`](schema/Table-Catalog.md).
+- **Local SQLite** — базова operational БД desktop-застосунку;
+- **Central PostgreSQL** — БД вищого/серверного рівня.
 
-## Physical baseline v1
+PostgreSQL більше не є обов’язковим для локальної роботи.
 
-Фізична модель охоплює **77 основних таблиць** у доменах:
+## Logical baseline
+
+Модель охоплює домени:
 
 - Organization / Identity;
 - Fleet;
@@ -20,40 +23,84 @@ PostgreSQL є транзакційним джерелом істини Transport
 - Fuel;
 - Maintenance / Repairs;
 - Corrections;
-- Audit / Integration / Operations.
+- Audit;
+- Transfer / Central authority;
+- Operations.
 
-## Ключові принципи
+Існуючий M0 catalog приблизно на 77 таблиць залишається джерелом доменної структури, але PostgreSQL-specific DDL більше не вважається єдиною physical реалізацією.
 
-- UUID primary keys, рекомендовано UUIDv7;
-- `company_id` як tenant key;
-- tenant-aware composite FK для критичних зв'язків;
-- `timestamptz` для моментів часу;
-- явний `service_date` для operational day;
-- normalised operational model;
-- versioned routes/schedules/templates;
-- plan і fact розділені;
-- immutable snapshots/versions для closed history;
+## Спільні принципи
+
+- UUID identifiers генеруються application-side;
+- `company_id` зберігається там, де потрібен enterprise context/central consolidation;
+- Plan і Fact розділені;
 - `Trip != Duty`;
 - Release належить Duty;
-- Waybill базово належить Duty і може містити 1..N Trips;
-- audit/events append-only;
-- correction workflow замість reopen/silent rewrite.
+- Waybill пов'язаний з Duty і 1..N Trips;
+- CLOSED history immutable;
+- correction workflow замість silent rewrite;
+- audit append-only;
+- optimistic `row_version` для mutable aggregates;
+- критичні business rules реалізуються в backend, а БД їх підсилює доступними constraints.
 
-## Детальна специфікація
+## Local SQLite profile
 
-- [Конвенції](schema/00-Conventions.md)
+Local schema повинна працювати без PostgreSQL extensions.
+
+Використовуються portable concepts:
+
+- FK;
+- UNIQUE;
+- CHECK;
+- indexes;
+- transactions;
+- triggers лише для фундаментальних invariants;
+- application-side UUID;
+- JSON serialization для extensible payloads;
+- authority/transfer tables з architecture-v1.6.
+
+RLS, GiST, `tstzrange`, PostgreSQL DB roles та partitioning не є local dependencies.
+
+## Central PostgreSQL profile
+
+Central може використовувати PostgreSQL-specific defense-in-depth:
+
+- RLS;
+- composite tenant-aware FK;
+- range/exclusion constraints;
+- row locking;
+- server roles;
+- partitioning;
+- JSONB indexes після profiling.
+
+## Authority model
+
+До central ACK business data мають local authority.
+
+Після ACK передані records локально read-only; central стає місцем подальшої модифікації цих records.
+
+Деталі: `ADR-0007-Local-SQLite-and-Central-Transfer.md` та `schema/06-Audit-System.md`.
+
+## Physical specification
+
+- [Конвенції Local/Central](schema/00-Conventions.md)
 - [Organization & Identity](schema/01-Organization-Identity.md)
 - [Fleet & Drivers](schema/02-Fleet-Drivers.md)
 - [Routes, Planning & Trips](schema/03-Routes-Planning-Trips.md)
 - [Duties & Release](schema/04-Duties-Release.md)
 - [Waybills, Fuel & Maintenance](schema/05-Waybills-Fuel-Maintenance.md)
-- [Audit & System](schema/06-Audit-System.md)
-- [RLS, immutability, indexes, partitioning](schema/07-RLS-Immutability-Indexes.md)
+- [Audit & Transfer](schema/06-Audit-System.md)
+- [SQLite/PostgreSQL integrity](schema/07-RLS-Immutability-Indexes.md)
 - [Foreign keys & delete policy](schema/08-Foreign-Keys-and-Delete-Policy.md)
 - [Migration readiness](schema/09-Migration-Readiness.md)
 - [Table Catalog](schema/Table-Catalog.md)
 - [ERD v1](schema/ERD-v1.md)
 
-## Майбутні домени
+## Практичне правило для подальшої розробки
 
-GPS, ticketing, payroll, accounting, full warehouse, EDI та external partner API навмисно не входять у physical MVP schema. Ядро залишає для них стабільні integration keys через Vehicle, Driver, Trip, Duty, Waybill та transactional Outbox.
+Кожна нова таблиця/constraint проходить дві перевірки:
+
+1. як це працює на Local SQLite;
+2. які додаткові гарантії доречні на Central PostgreSQL.
+
+Не приймаємо business design, який випадково робить локальний desktop залежним від PostgreSQL feature.

@@ -1,307 +1,390 @@
 # Транзакційні межі критичних API-команд
 
-Статус: **M0 freeze candidate**
+Статус: **architecture-v1.6 baseline**
 
-Кожна critical command виконується як одна application transaction. Або всі її business effects commit-яться разом, або жоден.
+Кожна critical command виконується як одна application transaction: або всі business effects commit-яться разом, або жоден.
 
-## 1. Assign vehicle to Duty
+## 0. Local authority + transfer-lock guard
+
+Перед будь-якою business mutation local backend перевіряє дві окремі речі:
+
+1. **Authority**:
+   - `LOCAL` — local mutation може бути дозволена за звичайними permission/state rules;
+   - `CENTRAL` — local mutation заборонена, повертається стабільна помилка на кшталт `409 RECORD_MANAGED_CENTRALLY`.
+2. **Temporary transfer lock**:
+   - якщо record включений у вже схвалений активний transfer batch, ordinary business mutation тимчасово блокується, щоб approved payload не змінився під час доставки.
+
+`PENDING_APPROVAL`, `TRANSFERRING`, `FAILED` — це transfer-batch statuses, а не authority states. До verified central ACK authority залишається `LOCAL`.
+
+UI лише відображає ці правила; гарантія знаходиться в backend.
+
+## 1. Physical transaction profile
+
+### Local SQLite
+
+Критична write command використовує контрольовану SQLite write transaction. Для resource-conflict операцій backend перечитує актуальний стан усередині transaction перед INSERT/UPDATE.
+
+### Central PostgreSQL
+
+Ті самі application rules можуть додатково підсилюватися row locks, exclusion constraints, RLS та іншими PostgreSQL mechanisms.
+
+Бізнес-правило не може залежати виключно від PostgreSQL feature, якщо воно потрібне local.
+
+## 2. Assign vehicle to Duty
 
 `POST /duties/{id}/assign-vehicle`
 
-Одна transaction:
+Transaction:
 
-1. load/lock Duty;
-2. verify current state;
-3. verify vehicle tenant/lifecycle;
-4. insert assignment;
-5. PostgreSQL EXCLUDE перевіряє overlap;
-6. update aggregate version;
-7. append Duty event;
+1. authority/transfer-lock guard;
+2. load current Duty state;
+3. verify vehicle lifecycle/context;
+4. re-check overlapping assignment;
+5. insert assignment;
+6. update aggregate `row_version`;
+7. append Duty event where used;
 8. append audit;
-9. append outbox event;
-10. commit.
+9. commit.
 
-Constraint violation → rollback → `409 VEHICLE_TIME_CONFLICT`.
+Conflict → rollback → `409 VEHICLE_TIME_CONFLICT`.
 
-## 2. Assign driver
+Central PostgreSQL може додатково мати exclusion constraint.
 
-Аналогічна transaction з DB exclusion для driver/time.
+## 3. Assign driver
 
-Assignment/usage segment окремо зберігає `crew_mode`; внутрішній driver role не визначає regulatory crew mode автоматично.
+Аналогічно vehicle assignment:
 
-## 3. Replace vehicle / driver
+- authority/transfer-lock guard;
+- current-state/permission validation;
+- overlap check inside write transaction;
+- insert assignment;
+- event/audit;
+- commit.
 
-Не UPDATE старого historical assignment.
+`crew_mode` зберігається явно і не виводиться автоматично з user role.
+
+## 4. Replace vehicle / driver
+
+Не переписуємо historical assignment.
 
 Transaction:
 
-- lock Duty;
-- validate effective_at;
-- close/supersede попередній active assignment/usage відповідно до workflow;
+- authority/transfer-lock guard;
+- verify Duty state;
+- validate `effective_at`;
+- close/supersede previous active assignment/usage;
 - create new assignment/usage;
 - validate conflicts;
-- append operational event;
-- audit;
-- outbox;
+- event/audit;
 - commit.
 
-## 4. Complete qualified technical check
+## 5. Complete qualified technical check
 
 `POST /releases/{id}/technical-checks`
 
 Transaction:
 
-- validate `technical_check.perform` та actor policy;
-- lock Release/subject as needed;
-- create completed check + detail + checklist results;
+- authority/transfer-lock guard для local-owned Release/Duty context;
+- permission/qualification validation;
+- create completed check + details/results;
 - derive final result server-side;
-- якщо blocking failure потребує defect evidence → create blocking defect у тій самій transaction;
+- create required blocking defect in same transaction where policy requires it;
 - event/audit;
 - commit.
 
-Не допускається `FAILED check`, для якого required blocking defect мав бути створений, без відповідного defect через partial failure.
+Completed check immutable. Correction = invalidation + new check.
 
-Назва job role виконавця не є DB invariant; authorization визначається permission/qualification policy.
-
-## 5. Complete medical check
+## 6. Complete medical check
 
 `POST /releases/{id}/medical-checks`
 
 Transaction:
 
-- validate actor/permission;
+- authority/transfer-lock guard;
+- permission validation;
 - create check/detail;
-- result тільки `FIT` або `UNFIT`;
-- mark completed result;
+- derive `FIT`/`UNFIT`;
 - audit;
 - commit.
 
-Completed record immutable. Invalidation є окремою command/transaction.
+Completed record не редагується напряму.
 
-## 6. Complete driver pre-departure technical check
-
-`POST /releases/{id}/driver-predeparture-checks`
+## 7. Complete driver pre-departure check
 
 Transaction:
 
-1. lock/read Release + Duty context;
-2. verify caller має `driver_predeparture_check.perform`;
-3. verify caller/subject відповідає assigned-driver scope або explicit authorized exception;
-4. verify vehicle/effective assignment;
-5. create `pre_trip_check` із `check_type=DRIVER_TECHNICAL_PREDEPARTURE`;
-6. create versioned checklist results;
-7. derive `PASSED/FAILED` server-side;
-8. audit/event;
-9. commit.
+1. authority/transfer-lock guard;
+2. verify assigned driver/authorized exception;
+3. verify vehicle/effective assignment;
+4. create completed evidence;
+5. derive result server-side;
+6. audit/event;
+7. commit.
 
-Completed check не редагується. Помилка → invalidation + new check.
+Driver check не підміняє qualified technical check.
 
-Цей check не підмінює qualified `TECHNICAL` check; Release policy може вимагати обидва.
-
-## 7. Evaluate Release
-
-`POST /releases/{id}/evaluate`
+## 8. Evaluate Release
 
 Transaction:
 
+- authority/transfer-lock guard;
 - read current assignments/checks/documents/defects/repairs;
-- determine current transport/service/route context;
-- select applicable compliance rule versions by effective period/context;
-- create new `evaluation_batch_id`;
-- insert rule results;
-- derive evaluated release state (`READY/BLOCKED` where applicable);
+- determine actual context;
+- select applicable compliance rules;
+- create new evaluation batch;
+- persist rule results;
+- derive `READY/BLOCKED` where applicable;
 - audit/event;
 - commit.
 
-Старі evaluation batches не UPDATE-яться.
+Old evaluation batch не UPDATE-иться.
 
-## 8. Authorize Release
+## 9. Authorize Release
 
-`POST /releases/{id}/authorize`
+Transaction:
 
-Одна з найкритичніших transaction:
+1. authority/transfer-lock guard;
+2. verify optimistic version (`If-Match`/row version);
+3. load latest Duty/Release/assignments;
+4. fresh-evaluate all blocking rules;
+5. persist evaluation evidence;
+6. if any blocking FAIL → rollback/no authorization;
+7. create positive authorization;
+8. set Release/Duty authorized states;
+9. event/audit;
+10. commit.
 
-1. lock Release;
-2. lock Duty;
-3. verify `If-Match`;
-4. load effective vehicle/driver assignments and actual policy context;
-5. select applicable current rule versions;
-6. **fresh evaluate** all blocking rules, включно з:
-   - effective medical `FIT`;
-   - qualified technical check;
-   - driver pre-departure technical evidence;
-   - contextual driver/vehicle/carrier/route documents/evidence;
-   - blocking defects/repairs;
-   - assignment/resource conflicts;
-7. persist evaluation batch;
-8. якщо blocking FAIL → no authorization;
-9. ensure Waybill policy/preconditions where applicable;
-10. create unique positive authorization;
-11. set Release `AUTHORIZED`;
-12. set Duty `AUTHORIZED`;
-13. event;
-14. audit;
-15. outbox;
-16. commit.
+Local SQLite не потребує PostgreSQL row-lock API; correctness забезпечує controlled local write transaction + current-state recheck. Central PostgreSQL може додатково lock rows.
 
-Жоден state не переходить в authorized до успішного завершення всіх guards.
+## 10. Allocate Waybill number / create Waybill
 
-## 9. Allocate Waybill number / create Waybill
+Transaction:
 
-Одна transaction:
-
-1. lock Duty/Waybill policy context;
-2. validate requested/default `document_role`;
-3. for `PRIMARY`, verify no active non-cancelled PRIMARY Waybill exists;
-4. lock applicable `number_sequences` row;
-5. take `next_value`;
-6. increment sequence;
-7. construct business number;
-8. create Waybill;
-9. DB UNIQUE confirms number/PRIMARY-policy uniqueness;
-10. audit;
-11. commit.
+1. authority/transfer-lock guard;
+2. verify Duty/Waybill policy;
+3. verify PRIMARY uniqueness where required;
+4. atomically obtain next number from local/central number sequence;
+5. create Waybill;
+6. audit;
+7. commit.
 
 `MAX(number)+1` заборонено.
 
-Виданий/зарезервований business number не використовується повторно після business cancellation. Формат/reset sequence є enterprise policy.
+Для кількох autonomous local nodes numbering policy повинна мати series/prefix/range strategy, щоб local issuance не залежала від постійного central connection.
 
-## 10. Generate Waybill version
+## 11. Generate Waybill version
 
-Business snapshot/version creation і job identity повинні бути consistent.
+Transaction:
 
-Recommended transaction:
-
-- lock Waybill;
+- authority/transfer-lock guard;
 - verify state/version;
-- create immutable snapshot/version metadata in pending-generation state or enqueue stable job via outbox;
-- audit/outbox;
-- commit.
-
-Worker генерує PDF idempotently для конкретного version ID. Він не створює нову business version самостійно.
-
-## 11. Duty depart
-
-Transaction:
-
-- lock Duty + Release;
-- verify AUTHORIZED/USED preconditions;
-- verify authorization still applicable;
-- validate odometer;
-- append confirmed odometer reading;
-- create actual vehicle/driver usage if needed;
-- preserve crew_mode on driver usage segments;
-- set Release `USED`;
-- set Duty `ON_LINE`;
-- event/audit/outbox;
-- commit.
-
-## 12. Duty return
-
-Transaction:
-
-- lock Duty;
-- verify `ON_LINE`;
-- validate arrival odometer >= departure;
-- record return facts;
-- close actual usage periods as appropriate;
-- set `RETURNED`;
-- event/audit/outbox;
-- commit.
-
-## 13. Trip close
-
-Transaction:
-
-- lock Trip;
-- verify `COMPLETED`;
-- validate required actual facts;
-- create immutable `trip_actual_snapshot` new version;
-- set effective snapshot ID;
-- set Trip `CLOSED`;
-- event/audit/outbox;
-- commit.
-
-Після commit historical snapshot не UPDATE-иться.
-
-## 14. Duty close
-
-Transaction:
-
-- lock Duty;
-- lock linked Trips у deterministic order;
-- verify all required Trips CLOSED/CANCELLED;
-- verify required return facts;
-- verify no unresolved blocking exception;
-- set `CLOSED`;
-- audit/event/outbox;
-- commit.
-
-## 15. Waybill close
-
-Transaction:
-
-- lock Waybill/Duty;
-- verify closing guards;
-- create/finalize immutable document version reference;
-- set Waybill `CLOSED`;
-- audit/outbox;
-- commit.
-
-PDF generation may be asynchronous, але final close semantics повинні гарантувати, що canonical final version однозначно визначена.
-
-## 16. Closed history correction
-
-Correction не reopen-ить entity.
-
-Transaction створення correction case:
-
-- verify entity CLOSED;
-- create `correction_case`;
-- record reason/requester;
+- create immutable document snapshot/version metadata;
 - audit;
 - commit.
 
-Transaction застосування approved correction:
+PDF generation може виконувати локальна background task, яку запускає сам desktop application. Окремий queue server не потрібен.
 
-- lock correction + entity;
-- create new immutable snapshot/version;
-- link previous version;
-- switch effective version pointer;
-- mark correction COMPLETED;
-- audit/outbox;
+## 12. Duty depart
+
+Transaction:
+
+- authority/transfer-lock guard;
+- verify Release authorization;
+- validate odometer;
+- append confirmed odometer reading;
+- create/update actual usage;
+- set Release `USED`;
+- set Duty `ON_LINE`;
+- event/audit;
 - commit.
 
-Старий snapshot/version залишається.
+## 13. Duty return
 
-## 17. Fuel correction
+Transaction:
 
-Historical fuel operation не UPDATE-иться.
+- authority/transfer-lock guard;
+- verify `ON_LINE`;
+- validate arrival facts/odometer;
+- close actual usage periods;
+- set `RETURNED`;
+- event/audit;
+- commit.
 
-Correction transaction створює reversal + new correct operation або іншу затверджену ledger-схему, зв'язану з original record.
+## 14. Trip close
 
-## 18. Outbox rule
+Transaction:
 
-Якщо business state змінився і зовнішня/async реакція важлива, outbox row вставляється **в тій самій DB transaction**.
+- authority/transfer-lock guard;
+- verify `COMPLETED`;
+- validate required facts;
+- create immutable actual snapshot/version;
+- set effective snapshot;
+- set Trip `CLOSED`;
+- event/audit;
+- commit.
 
-Не допускається:
+## 15. Duty close
 
-`commit business state → потім окремо спробувати записати event`.
+Transaction:
 
-## 19. Audit rule
+- authority/transfer-lock guard;
+- verify linked Trips CLOSED/CANCELLED as required;
+- verify return facts/blocking exceptions;
+- set `CLOSED`;
+- audit/event;
+- commit.
 
-Critical audit entry є частиною тієї самої transaction, якщо це не суперечить спеціальному security logging design.
+## 16. Waybill close
 
-## 20. Lock ordering
+Transaction:
 
-Canonical lock order для operations, де потрібні кілька aggregate/resource rows:
+- authority/transfer-lock guard;
+- verify closing guards;
+- finalize immutable version reference;
+- set `CLOSED`;
+- audit;
+- commit.
 
-`Duty → Trips(sorted) → Vehicle/Driver resource state → Release → Waybill → Number Sequence`.
+## 17. Closed history correction
 
-Будь-яке відхилення має пройти concurrency review.
+Closed entity не reopen-иться звичайним edit.
 
-## 21. Isolation
+Local correction дозволена лише поки authority=`LOCAL` і немає active transfer lock.
 
-Default PostgreSQL isolation: `READ COMMITTED` + explicit row locks/constraints.
+Після authority=`CENTRAL` correction створюється/застосовується на central; local отримує нову read-only effective version.
 
-`SERIALIZABLE` використовується точково лише для operation, де це обґрунтовано окремим design review.
+Correction створює new immutable snapshot/version, залишаючи попередню history.
+
+## 18. Fuel correction
+
+Historical fuel row не UPDATE-иться.
+
+Correction = reversal/correction record + audit за затвердженою ledger-схемою.
+
+Authority/transfer-lock guard діє так само, як для інших business data.
+
+## 19. Prepare transfer batch
+
+Створення pending batch **не передає дані і не змінює authority**.
+
+Transaction:
+
+1. select candidate records;
+2. verify authority=`LOCAL`;
+3. verify records are not already transfer-locked by another active approved batch;
+4. include required dependencies;
+5. snapshot versions/checksums;
+6. create `transfer_batch` + `transfer_items` зі статусом `PENDING_APPROVAL`;
+7. audit `TRANSFER_PREPARED`;
+8. commit.
+
+Rule або central request може виконати цей етап автоматично.
+
+## 20. Local approve transfer
+
+Фактичну передачу завжди підтверджує локальний оператор.
+
+Transaction:
+
+1. load pending batch;
+2. verify item versions/checksums still match;
+3. if changed → reject approval and rebuild batch;
+4. set `approved_by/approved_at`;
+5. set batch `TRANSFERRING`;
+6. set temporary transfer lock on included records;
+7. create delivery/outbox row;
+8. audit `TRANSFER_APPROVED`;
+9. commit.
+
+Authority records залишається `LOCAL`.
+
+## 21. Delivery retry
+
+Network delivery is outside the business transaction but is idempotent by `origin_node_id + transfer_batch_id`.
+
+On timeout/network error:
+
+- batch стає retryable/`FAILED` згідно implementation;
+- authority records залишається `LOCAL`;
+- temporary transfer lock лишається під час retry, щоб payload не змінився;
+- application може retry identical approved payload;
+- оператор бачить status/error.
+
+Якщо workflow дозволяє скасувати failed batch, cancellation transaction знімає transfer lock і лишає authority=`LOCAL`.
+
+No Kafka/Redis is required for local retry.
+
+## 22. Apply central ACK locally
+
+Після verified central ACK:
+
+Transaction:
+
+1. load transfer batch;
+2. verify receipt matches batch/node/checksum;
+3. mark batch `ACKNOWLEDGED`;
+4. set included records authority=`CENTRAL`;
+5. clear temporary transfer lock;
+6. persist `central_ack_id`/timestamp/version;
+7. mark delivery complete;
+8. audit `TRANSFER_ACKNOWLEDGED` and `LOCAL→CENTRAL` authority transition;
+9. commit.
+
+Only this transaction permanently removes local edit rights.
+
+## 23. Receive batch on Central
+
+Central receive is idempotent.
+
+Transaction:
+
+1. authenticate/identify origin node;
+2. validate approved batch envelope/checksum;
+3. check unique `origin_node_id + transfer_batch_id`;
+4. if already accepted, return existing logical ACK;
+5. otherwise persist business data/versions under central authority;
+6. record central audit/receipt;
+7. commit;
+8. return ACK.
+
+## 24. Central change returned to Local
+
+Central may send a newer version/snapshot for a record authority=`CENTRAL`.
+
+Local transaction:
+
+- verify record authority=`CENTRAL`;
+- verify monotonic central version/receipt;
+- update local read-only representation through system sync path;
+- audit;
+- commit.
+
+This does not restore local edit rights.
+
+## 25. Audit rule
+
+Critical audit entry is written in the same application transaction as the business state change whenever practical.
+
+Transfer preparation, approval, ACK, cancellation, restore and authority changes are always audited.
+
+## 26. Outbox rule
+
+Architecture-v1.6 **does not append integration outbox events to every business mutation by default**.
+
+Local transfer delivery outbox is created when the operator approves an actual transfer batch. Other async jobs use an outbox only when there is a concrete need.
+
+## 27. Concurrency
+
+### Local
+
+SQLite has one coordinated application writer for critical writes. Keep transactions short; do not perform network calls while holding the write transaction.
+
+### Central
+
+PostgreSQL may use deterministic lock ordering and row locks for multi-aggregate operations.
+
+## 28. Isolation
+
+Local SQLite uses its transaction/locking model with application-side current-state checks.
+
+Central PostgreSQL default remains `READ COMMITTED` plus explicit constraints/locks where required. `SERIALIZABLE` only after specific design/benchmark justification.

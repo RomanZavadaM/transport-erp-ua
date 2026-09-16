@@ -1,192 +1,242 @@
-# PostgreSQL Physical Schema v1 — Конвенції
+# Physical Schema Conventions — Local SQLite + Central PostgreSQL
 
-Статус: **M0 physical design draft**  
-Пов’язаний issue: **#3**
+Статус: **architecture-v1.6 baseline**
 
-## 1. PostgreSQL
+## 1. Один логічний model, два physical profiles
 
-Ціль: PostgreSQL 16+ для production baseline.
+### Local
+SQLite — базова operational БД desktop-застосунку.
 
-Required extensions:
+### Central
+PostgreSQL 16+ — рекомендована серверна БД центрального рівня.
 
-- `pgcrypto` — UUID/crypto utilities за потреби;
-- `citext` — case-insensitive email/login fields;
-- `btree_gist` — exclusion constraints із UUID/company keys.
+Application/domain code не повинен вимагати PostgreSQL-specific типів для звичайної локальної роботи.
 
 ## 2. Primary keys
 
-Основні бізнес-таблиці:
+Business identifiers генеруються application-side як UUID.
 
-`id uuid PRIMARY KEY`
+Логічний тип: `UUID`.
 
-Рекомендація для application-generated ID: UUIDv7.
+- Local SQLite: стабільне textual UUID representation;
+- Central PostgreSQL: native `uuid`.
 
-DB не покладається на послідовний integer ID як зовнішній API identifier.
+Зовнішній API не використовує auto-increment integer як business identifier.
 
-## 3. Tenant key
+## 3. Company context
 
-Основні company-scoped таблиці мають:
+`company_id` лишається у model для enterprise identity та central consolidation.
 
-`company_id uuid NOT NULL`
+Local node зазвичай має один активний enterprise context, тому RLS усередині SQLite не емулюється.
 
-Для критичних cross-tenant relations parent таблиця додатково має:
+Central PostgreSQL може використовувати composite FK/RLS там, де це виправдано.
 
-`UNIQUE (company_id, id)`
+## 4. Час і дати
 
-а child використовує composite FK:
+Логічні типи:
 
-`FOREIGN KEY (company_id, parent_id) REFERENCES parent(company_id,id)`.
+- moment — timezone-aware datetime;
+- business/service date — date;
+- schedule local time — time.
 
-Це фізично забороняє зв’язок сутностей різних підприємств.
+Правило:
 
-## 4. Timestamps
+- moments canonical зберігаються/передаються в UTC;
+- company/display timezone зберігається як IANA name, наприклад `Europe/Kyiv`;
+- Local SQLite використовує однозначне ISO-8601 representation через persistence adapter;
+- Central PostgreSQL використовує `timestamptz`/`date`/`time`.
 
-Моменти часу:
-
-`timestamptz`
-
-Business date:
-
-`date`
-
-Час у розкладі без конкретної дати:
-
-`time without time zone`
-
-Company timezone зберігається як IANA name, наприклад `Europe/Kyiv`.
+Не покладатися на SQLite server timezone.
 
 ## 5. Common mutable aggregate columns
 
-Для mutable aggregate root:
+Логічно:
 
-- `created_at timestamptz NOT NULL DEFAULT now()`;
-- `created_by uuid NULL/NOT NULL according to context`;
-- `updated_at timestamptz NOT NULL DEFAULT now()`;
-- `updated_by uuid NULL`;
-- `row_version bigint NOT NULL DEFAULT 1`.
+- `created_at`;
+- `created_by`;
+- `updated_at`;
+- `updated_by`;
+- `row_version bigint/int64 DEFAULT 1`.
 
-`row_version` змінюється при meaningful update і є основою ETag/If-Match.
+`row_version` збільшується при meaningful update і використовується для optimistic locking.
 
 ## 6. Delete policy
 
-Operational/history tables:
+Operational/history data не видаляється фізично звичайним користувацьким flow.
 
-`ON DELETE RESTRICT` / `NO ACTION`.
+FK default: RESTRICT/NO ACTION semantics.
 
-`ON DELETE CASCADE` дозволено лише для технічних association rows, наприклад:
+CASCADE допускається для технічних association rows, які не мають окремої історичної цінності.
 
-- `user_roles`;
-- `role_permissions`;
-- draft-only child configuration, якщо parent ще не використано історично.
-
-Closed business history не видаляється.
+Business lifecycle використовує `CANCELLED`, `REVOKED`, `SUPERSEDED`, `DECOMMISSIONED`, `TERMINATED` тощо замість generic `deleted_at`.
 
 ## 7. Status fields
 
-State-machine values зберігаються як `varchar(32)` / `text` + CHECK, а не PostgreSQL ENUM.
+Стабільні text codes + CHECK/application validation.
 
-Причина: контрольовані migrations простіші, а технічні codes залишаються стабільними.
+Не використовуємо PostgreSQL ENUM як доменну необхідність.
 
-## 8. Time ranges
+SQLite і PostgreSQL повинні приймати однаковий набір codes.
 
-Assignment/usage periods:
+## 8. Assignment/usage periods
 
-`tstzrange`
+Логічно period має `from` і `to` з семантикою `[from,to)`.
 
-Canonical bounds:
+### Local SQLite
+Зберігаються окремі `*_from` / `*_to` timestamps. Overlap перевіряє backend усередині controlled write transaction; потрібні indexes по resource + from/to.
 
-`[from,to)`.
+### Central PostgreSQL
+Можна додатково використовувати `tstzrange`/GiST exclusion як defense-in-depth.
 
-CHECK:
+Core domain не залежить від range type.
 
-- range not empty;
-- lower bound not null;
-- upper bound not null.
+## 9. Exact numeric values
 
-Adjacent periods `08:00–10:00` і `10:00–12:00` не конфліктують.
+API/domain використовує exact decimal semantics для:
 
-## 9. Numeric policy
+- distance;
+- fuel;
+- money;
+- unit price.
 
-- odometer: `bigint` kilometers для MVP;
-- distance: `numeric(12,3)`;
-- fuel: `numeric(12,3)`;
-- money: `numeric(14,2)`;
-- unit price: `numeric(14,4)`;
-- coordinates: `numeric(9,6)`.
+Local SQLite implementation **не повинна тихо переводити exact business values у binary float**.
 
-## 10. JSONB
+До M2 physical implementation має обрати та протестувати один portable mapping:
 
-`jsonb` використовується лише там, де структура справді versioned/extensible:
+- scaled integer storage для полів із фіксованою точністю; або
+- інший exact serialization adapter з guaranteed round-trip.
 
-- immutable snapshots;
-- rule details/configuration;
+Central PostgreSQL використовує `numeric(p,s)`.
+
+Acceptance tests повинні доводити однаковий round-trip Local ↔ Central для граничних значень.
+
+## 10. JSON / extensible payloads
+
+Логічний JSON використовується лише для справді extensible/versioned data:
+
+- immutable snapshot details;
 - audit before/after;
-- integration payload;
+- rule/config details;
+- transfer envelope metadata;
 - template schema.
 
-Core relational fields не ховаються в JSONB.
+Core searchable relational fields не ховаються в JSON.
 
-## 11. Immutability
+- Local SQLite: JSON serialized storage + application schema validation;
+- Central PostgreSQL: `jsonb`.
 
-Append-only / immutable після insert:
+## 11. Boolean
 
-- `audit_log`;
-- `trip_events`;
-- `duty_events`;
-- `waybill_versions`;
-- `trip_actual_snapshots`;
-- `release_rule_evaluations`;
-- completed check data після completion;
-- historical correction evidence.
+Логічний boolean:
 
-Protection: DB grants + triggers where required.
+- Local SQLite — INTEGER/boolean adapter з CHECK за потреби;
+- Central PostgreSQL — boolean.
 
-## 12. Soft delete vs business state
+## 12. Immutability
 
-Не використовувати generic `deleted_at` для operational history.
+Append-only/immutable rules реалізуються насамперед application layer та тестами.
 
-Замість цього business states:
+SQLite trigger / PostgreSQL grants+trigger можуть додатково захищати:
 
-- `CANCELLED`;
-- `REVOKED`;
-- `SUPERSEDED`;
-- `DECOMMISSIONED`;
-- `TERMINATED`.
+- audit;
+- closed snapshots;
+- finalized document versions;
+- completed checks;
+- correction evidence;
+- central-owned local records від business UPDATE/DELETE.
 
-Master/reference data може мати `active boolean` або archive state.
+Не створювати trigger spaghetti для звичайної бізнес-логіки.
 
-## 13. Index naming
+## 13. Authority та transfer lock
 
-Convention:
+Transferable aggregate root повинен мати доступний backend-у business authority без дорогого inference.
 
-- PK: automatic / `pk_<table>`;
-- unique: `uq_<table>_<fields>`;
-- index: `ix_<table>_<fields>`;
-- check: `ck_<table>_<meaning>`;
-- FK: `fk_<table>_<field>_<parent>`;
-- exclusion: `ex_<table>_<meaning>`.
+Рекомендований local physical pattern:
 
-## 14. RLS context
+- `authority` = `LOCAL | CENTRAL`;
+- `transfer_lock_batch_id` nullable;
+- `central_version` nullable;
+- `central_ack_id` nullable;
+- `central_synced_at` nullable.
 
-Runtime transaction встановлює company context через `SET LOCAL`/equivalent transaction-local setting.
+Правила:
 
-Runtime DB role:
+- authority не змінюється при `PENDING_APPROVAL`, `TRANSFERRING` або `FAILED`;
+- до verified central ACK authority=`LOCAL`;
+- після local approval `transfer_lock_batch_id` може тимчасово блокувати ordinary business edit approved records;
+- failed/cancelled transfer може зняти temporary lock без зміни authority;
+- тільки verified ACK переводить `authority: LOCAL → CENTRAL`;
+- authority=`CENTRAL` означає постійний local read-only для business mutation.
 
-- не superuser;
-- не `BYPASSRLS`;
-- не owner критичних tables.
+Transfer-batch status зберігається в `transfer_batches`, а не підмінює authority record-а.
 
-## 15. DB roles
+## 14. Index naming
 
-Передбачити:
+Logical naming convention у migrations:
 
-- `migration_role` — DDL;
-- `app_runtime_role` — business DML за grants/RLS;
-- `reporting_role` — read-only views/read models;
-- `backup_role` — backup-specific minimum privileges.
+- `pk_<table>`;
+- `uq_<table>_<fields>`;
+- `ix_<table>_<fields>`;
+- `ck_<table>_<meaning>`;
+- `fk_<table>_<field>_<parent>`;
+- PostgreSQL-only exclusion: `ex_<table>_<meaning>`.
 
-## 16. Migration principle
+## 15. SQLite startup pragmas
 
-Physical design є основою Alembic migration #1, але schema повинна створюватися migrations, а не ручним production SQL.
+Local DB initialization обов’язково централізовано задає й перевіряє потрібні pragmas, щонайменше:
 
-Зміни production schema: expand → migrate/backfill → contract, коли потрібна backward compatibility.
+- foreign keys enabled;
+- journal mode policy, після тестування desktop crash/recovery;
+- busy timeout policy;
+- synchronous policy, яка не жертвує business durability заради косметичної швидкості.
+
+Конкретні значення затверджуються M1.5 acceptance tests, а не вгадуються архітектурним документом.
+
+## 16. SQLite file access
+
+SQLite database file належить TransportERP-UA application data directory.
+
+Заборонена supported topology:
+
+- один `.db` файл на network share, який напряму відкривають кілька ПК.
+
+Інші робочі місця, якщо local node їх обслуговує, звертаються через application API.
+
+## 17. Central PostgreSQL extensions
+
+Central може використовувати:
+
+- `citext` або normalized application fields;
+- `btree_gist` для exclusion constraints;
+- `pgcrypto` за фактичною потребою.
+
+Жодне extension не повинно бути required для запуску Local Desktop.
+
+## 18. DB roles / RLS
+
+### Local SQLite
+Немає PostgreSQL DB roles/RLS. Authorization — application RBAC + local data authority rules.
+
+### Central PostgreSQL
+Можливі migration/runtime/reporting/backup roles та RLS.
+
+## 19. Migrations
+
+Application migrations повинні мати окремо перевірені SQLite і PostgreSQL paths, якщо DDL відрізняється.
+
+CI minimum:
+
+- clean SQLite install;
+- SQLite upgrade from previous schema;
+- SQLite backup/restore;
+- clean central PostgreSQL install;
+- PostgreSQL upgrade;
+- logical schema/contract parity tests.
+
+Не намагаємося штучно зробити DDL байт-в-байт однаковим між SQLite і PostgreSQL.
+
+## 20. Transfer compatibility
+
+Передача Local → Central відбувається через application/API contract, а не через SQL dump або database replication.
+
+Це дозволяє physical storage типам відрізнятися без зміни бізнес-семантики.

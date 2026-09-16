@@ -1,353 +1,201 @@
-# PostgreSQL Schema — RLS, Immutability, Indexes & Partitioning
+# Database Integrity — Local SQLite + Central PostgreSQL
 
-Статус: **M0 physical design draft**
+Статус: **architecture-v1.6 baseline**
 
-## 1. Tenant isolation
+Назва файла історична. RLS є PostgreSQL-specific механізмом central profile і не є вимогою Local Desktop.
 
-Основний tenant key — `company_id`.
+## 1. Спільний принцип
 
-Він присутній у всіх основних operational/business tables навіть там, де теоретично міг би бути отриманий через parent relation. Це свідома денормалізація для:
+Бізнес-правило не повинно існувати тільки у PostgreSQL constraint, якщо те саме правило потрібне Local Desktop.
+
+Канонічний рівень перевірки:
+
+1. application/backend transaction;
+2. portable DB constraints, де можливо;
+3. DB-specific defense-in-depth додатково.
+
+## 2. Local SQLite
+
+Local використовує:
+
+- transactions;
+- `PRAGMA foreign_keys = ON`;
+- FK;
+- UNIQUE;
+- CHECK;
+- indexes;
+- partial indexes, де підтримуються і виправдані;
+- triggers лише для фундаментальних гарантій;
+- `row_version` / optimistic locking;
+- controlled write transaction для критичних команд.
+
+SQLite file не відкривається напряму іншим робочим місцям через network share. Усі зміни проходять через local backend.
+
+## 3. Central PostgreSQL
+
+Central може додатково використовувати:
 
 - RLS;
-- tenant-aware composite FK;
-- індексів;
-- reporting;
-- захисту від cross-company programming error.
+- tenant/company context;
+- composite tenant-aware FK;
+- range types;
+- GiST exclusion constraints;
+- row locks;
+- `FOR UPDATE SKIP LOCKED` для server workers;
+- partitioning;
+- specialized DB roles.
 
-## 2. Tenant-aware foreign keys
+Ці механізми не повинні ставати вимогою локальної інсталяції.
 
-Критичні parent tables мають:
+## 4. Company scope
 
-`UNIQUE (company_id, id)`.
+`company_id` зберігається у business model там, де він потрібен для ідентифікації підприємства/центральної консолідації.
 
-Child relation використовує:
+На local node зазвичай працює один enterprise context. Не потрібно емулювати PostgreSQL RLS усередині SQLite.
 
-`FOREIGN KEY (company_id, parent_id) REFERENCES parent(company_id,id)`.
+Central PostgreSQL може застосовувати RLS для ізоляції даних різних company contexts, якщо центральний deployment реально їх містить.
 
-Обов'язково для relations, де cross-tenant помилка матиме серйозний наслідок:
+## 5. Authority/read-only invariant
 
-- vehicles ↔ depots;
-- drivers ↔ depots;
-- users ↔ drivers;
-- route_versions ↔ routes;
-- route_stops ↔ route_versions/stops;
-- schedules ↔ routes;
-- schedule_versions ↔ schedules/route_versions;
-- trips ↔ route_versions/schedule_runs;
-- duty_trips ↔ duties/trips;
-- duty assignments ↔ duties/vehicles/drivers;
-- releases ↔ duties;
-- checks ↔ releases + subject;
-- waybills ↔ duties;
-- fuel ↔ vehicles/duties/trips/waybills;
-- defects/maintenance/repairs ↔ vehicles;
-- audit/outbox/report exports ↔ company-scoped actors/entities where direct FK is practical.
+Найважливіший новий invariant v1.6:
 
-Polymorphic audit/entity references не мають universal FK, але company scope завжди зберігається.
+- `LOCAL` record може змінювати local backend;
+- `CENTRAL` record local backend змінювати не може.
 
-## 3. PostgreSQL RLS
+Перевірка виконується кожною mutation command до business write.
 
-RLS вмикається для tenant-scoped business tables після bootstrap/migration creation.
+Для критичних таблиць SQLite trigger може додатково блокувати direct update/delete `CENTRAL` rows як defense-in-depth.
 
-Runtime transaction встановлює company context transaction-locally, наприклад application-defined setting:
+Migration/recovery tooling працює через окремий контрольований режим.
 
-`SET LOCAL app.company_id = '<uuid>'`.
+## 6. Transfer invariants
 
-Policy concept:
+Обов’язково:
 
-`company_id = current_setting('app.company_id', true)::uuid`.
+- batch не переходить у `TRANSFERRING` без local approval;
+- approved payload не змінюється без повторного approval;
+- authority не переходить у `CENTRAL` до valid central ACK;
+- retry тієї самої передачі не створює дублікати на central;
+- central update, повернений local, не повертає authority назад у `LOCAL`.
 
-Runtime role:
+## 7. Immutable history
 
-- не superuser;
-- не table owner;
-- не `BYPASSRLS`.
+Залишаються append-only/immutable принципи для:
 
-Якщо company context відсутній, tenant rows не повинні ставати доступними за default-fail policy.
+- audit;
+- trip/duty operational events, де застосовуються;
+- closed snapshots;
+- finalized Waybill version content;
+- completed control evidence;
+- correction evidence.
 
-## 4. System/global reference rows
-
-Таблиці, що можуть мати global rows (`company_id IS NULL`), наприклад:
-
-- permissions;
-- деякі system document/check types/templates;
-- global reference dictionaries,
-
-читаються через окремо визначену policy/view.
-
-Tenant user не отримує write access до global system rows.
-
-## 5. Service identities
-
-Background worker використовує окрему DB/service identity.
-
-Він не повинен автоматично мати unrestricted cross-tenant access. Для cross-company scheduled jobs застосовується контрольований service context або окремий privileged worker role з audit/monitoring, а не звичайний runtime connection.
-
-## 6. Immutable / append-only tables
-
-Повністю append-only після INSERT:
-
-- `audit_log`;
-- `trip_events`;
-- `duty_events`;
-- `trip_actual_snapshots`;
-- finalized `waybill_versions` content;
-- `release_rule_evaluations`;
-- `audit_partition_seals`;
-- completed historical correction evidence.
-
-Для них runtime role:
-
-- `SELECT` за permissions/RLS;
-- `INSERT` через application service;
-- без `DELETE`;
-- без `UPDATE`, крім чітко виділених technical lifecycle fields, якщо вони фізично відокремлені або whitelist-нуті.
-
-## 7. Immutability triggers
-
-Defense-in-depth trigger використовується там, де одних grants недостатньо через operational tooling/migration mistakes.
-
-Conceptual trigger:
-
-- `BEFORE UPDATE OR DELETE`;
-- якщо session role є runtime/business role → raise exception;
-- migration/maintenance role може виконувати контрольовані операції лише через change procedure/runbook.
-
-Не створювати trigger spaghetti для кожного business rule; triggers тут лише для фундаментальної immutability.
+Local SQLite та central PostgreSQL повинні забезпечувати однакову business semantics, навіть якщо physical constraints різні.
 
 ## 8. Completed checks
 
-`pre_trip_checks` до completion є stateful row. Після `PASSED/FAILED` business fields стають immutable.
+Completed medical/technical check не редагується напряму.
 
-Виправлення:
+Виправлення = invalidation/correction + new record.
 
-- original check не UPDATE-иться;
-- створюється `pre_trip_check_invalidations`;
-- потім новий check.
-
-DB trigger/application guard може блокувати update completed row за винятком explicitly allowed technical metadata, якщо таке взагалі буде потрібне.
+Це application rule; SQLite trigger може його підсилити.
 
 ## 9. Closed aggregates
 
-Для `trips`, `duties`, `waybills` aggregate root row має окремі lifecycle fields, тому сам row технічно може змінюватися при correction pointer update.
+Після terminal/closed state historical core fields не UPDATE-яться звичайною mutation command.
 
-Але після terminal state забороняється зміна historical core fields:
+Correction створює нову version/snapshot і змінює effective pointer за контрольованою процедурою.
 
-- plan identifiers/times, що вже є історичною основою;
-- original close timestamps/actor без correction workflow;
-- document number;
-- closed snapshot/version content.
+## 10. Resource conflict rules
 
-Correction змінює лише effective-version pointer/metadata через спеціальну command.
+Один driver/vehicle не може бути призначений на несумісні одночасні роботи.
 
-## 10. Critical indexes — organization/identity
+### Local SQLite
 
-- `users(company_id,status)`;
-- unique `users(company_id,username)`;
-- unique partial email;
-- `user_sessions(user_id,expires_at)`;
-- partial active session expiration;
-- idempotency unique scope key;
-- idempotency `(expires_at)` cleanup index.
+Критична command виконується в контрольованій write transaction:
 
-## 11. Critical indexes — fleet/drivers
+1. почати write transaction;
+2. перечитати актуальні assignments;
+3. перевірити overlap;
+4. записати assignment;
+5. commit.
 
-Vehicles:
+Оскільки local database writer координується одним backend application, не будуємо PostgreSQL-like distributed locking усередині desktop.
 
-- unique fleet number;
-- unique registration number;
-- unique VIN partial;
-- `(company_id,lifecycle_status)`;
-- `(company_id,depot_id,lifecycle_status)`.
+### Central PostgreSQL
 
-Documents:
+Додатково може використовувати GiST exclusion constraint/locking як defense-in-depth.
 
-- `(company_id,vehicle_id,document_type_id)`;
-- `(company_id,valid_until)`;
-- corresponding driver indexes.
+## 11. Indexes Local
 
-Odometer:
+Додаємо лише indexes під реальні operational queries.
 
-- `(vehicle_id,recorded_at DESC)`;
-- confirmed partial index.
+Початково потрібні:
 
-Drivers:
+- users status/username;
+- vehicles status/depot;
+- drivers status/depot;
+- trips service date/status;
+- duties service date/status;
+- active assignments by vehicle/driver/time;
+- Waybill number/status;
+- transfer batch status/time;
+- transfer items entity id;
+- audit entity/time;
+- document validity dates.
 
-- unique personnel number;
-- `(company_id,employment_status)`;
-- `(company_id,default_depot_id,employment_status)`.
+Не створюємо GIN/JSON indexes “про всяк випадок”.
 
-## 12. Critical indexes — planning
+## 12. Indexes Central
 
-- unique route number;
-- GiST exclusion on route version valid period;
-- route stops ordered index;
-- GiST exclusion on schedule version valid period;
-- unique `(schedule_run_id,service_date)` for generated Trip;
-- trips `(company_id,service_date)`;
-- trips `(company_id,status,service_date)`;
-- trips `(route_version_id,service_date)`;
-- trips `(planned_departure_at)`.
+Central додає ті самі operational indexes плюс спеціалізовані PostgreSQL indexes після profiling.
 
-## 13. Critical indexes — dispatch/release
+`pg_stat_statements`/`EXPLAIN` застосовуються central, а не є local prerequisite.
 
-Duty:
+## 13. Audit partitioning
 
-- `(company_id,service_date)`;
-- `(company_id,status,service_date)`;
-- `(company_id,depot_id,service_date)`.
+Local audit починається **unpartitioned**.
 
-Assignments:
+Central partitioning вводиться лише коли обсяг даних/retention operations це виправдовують.
 
-- GiST exclusion indexes є головними conflict indexes;
-- btree `(company_id,duty_id)`;
-- btree `(company_id,vehicle_id)` / `(company_id,driver_id)`.
+Architecture-v1.6 не вимагає monthly partitions від першого дня.
 
-Release:
+## 14. DB roles
 
-- UNIQUE duty_id;
-- check queries `(release_id,check_type,completed_at DESC)`;
-- evaluations `(release_id,evaluation_batch_id)`;
-- partial unique positive authorization.
+### Local SQLite
 
-## 14. Critical indexes — documents/fuel/maintenance
+Немає окремих PostgreSQL DB roles. Захист від звичайного користувацького редагування забезпечує application packaging, filesystem permissions, backend rules, backup та audit.
 
-Waybill:
+### Central PostgreSQL
 
-- unique `(company_id,full_number)`;
-- `(company_id,status,created_at)`;
-- versions `(waybill_id,version_no DESC)`.
+Можуть бути:
 
-Fuel:
+- migration role;
+- runtime role;
+- reporting role;
+- backup role.
 
-- `(company_id,vehicle_id,operation_at)`;
-- `(company_id,operation_at)`;
-- duty/waybill refs.
+## 15. Migration CI
 
-Defects:
+CI має тестувати обидва physical profiles:
 
-- `(vehicle_id,status)`;
-- partial blocking-open defect index.
+### SQLite
 
-Repairs:
+- clean install;
+- migration upgrade;
+- FK enabled;
+- critical constraints/triggers;
+- local authority blocking;
+- backup/restore fixture;
+- interrupted transfer recovery.
 
-- `(vehicle_id,status)`;
-- partial blocking-operation index.
+### PostgreSQL central
 
-## 15. Audit partitioning
+- clean install/upgrade;
+- server constraints;
+- RLS, якщо воно ввімкнене;
+- central receive idempotency;
+- ACK receipt integrity.
 
-`audit_log` проектується як range-partitioned за `occurred_at`.
+## 16. Практичне правило
 
-Рекомендований initial cadence: monthly partitions.
-
-Причини:
-
-- predictable retention/archive operations;
-- локальні indexes;
-- швидший time-range pruning;
-- простіше sealing/archive.
-
-Partition creation має бути автоматизоване operations job/migration policy завчасно.
-
-Відсутність майбутньої partition не повинна ламати production insert: або default partition, або гарантоване precreation. Остаточний механізм затверджується Issue #5 operations design.
-
-## 16. Trip/Duty events partitioning
-
-Для MVP event volume очікується помірним, тому вони можуть стартувати unpartitioned.
-
-Коли volume виправдає partitioning, migration може partition by occurred_at без зміни domain contract.
-
-GPS positions від початку проектуються окремо й не повинні перевантажувати `trip_events`.
-
-## 17. Outbox indexes
-
-Partial index:
-
-`WHERE published_at IS NULL` по `(created_at)`.
-
-Worker query використовує bounded batch + `FOR UPDATE SKIP LOCKED`.
-
-Не створювати надмірні indexes по JSON payload.
-
-## 18. JSONB indexes
-
-GIN indexes на JSONB додаються лише після підтвердженого query pattern.
-
-Не індексувати `snapshot`, `audit before/after`, `payload` “про всяк випадок”.
-
-## 19. pg_stat_statements / index review
-
-Production index review виконується за:
-
-- `pg_stat_statements`;
-- `EXPLAIN (ANALYZE, BUFFERS)`;
-- actual slow query telemetry.
-
-M0 фіксує mandatory correctness/primary operational indexes, але не намагається вгадати всі оптимізації наперед.
-
-## 20. Lock ordering
-
-Canonical lock order для multi-aggregate critical transactions:
-
-1. Duty;
-2. Trips у deterministic order (`ORDER BY id`);
-3. vehicle/driver resource state/assignment rows;
-4. Release;
-5. Waybill;
-6. Number Sequence.
-
-Новий application service, який порушує цей порядок, потребує concurrency review.
-
-## 21. Isolation level
-
-Default: `READ COMMITTED`.
-
-Correctness отримуємо через:
-
-- row locks;
-- unique constraints;
-- exclusion constraints;
-- FK/check constraints;
-- optimistic locking.
-
-`SERIALIZABLE` — точково для складної planning operation після окремого benchmark/design review.
-
-## 22. Deadlock/serialization retry
-
-Runtime може bounded-retry transient DB failure лише якщо command side effects повністю transactional/idempotent.
-
-Retry не повинен створювати duplicate audit/outbox/document artifacts.
-
-## 23. DB role grants summary
-
-### migration_role
-
-- owns/migrates schema;
-- no normal application use.
-
-### app_runtime_role
-
-- DML тільки потрібних tables;
-- RLS enforced;
-- no DDL;
-- no UPDATE/DELETE immutable tables.
-
-### reporting_role
-
-- SELECT на views/materialized/read model;
-- no operational mutation.
-
-### backup_role
-
-- privileges only sufficient for backup tooling.
-
-## 24. Integrity checks after migration
-
-Migration CI повинна перевіряти:
-
-- всі expected constraints/indexes exist;
-- RLS enabled where required;
-- runtime grants do not include prohibited operations;
-- clean install schema;
-- upgrade path from previous release;
-- rollback/recovery strategy documented for destructive migrations.
+Якщо нова функція працює лише тому, що PostgreSQL має специфічний feature, потрібно перевірити, як те саме business rule працює на Local SQLite, перш ніж приймати дизайн.

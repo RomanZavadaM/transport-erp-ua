@@ -1,194 +1,186 @@
-# PostgreSQL Schema — Audit, Outbox, Reports & Integrity
+# Audit, Transfer Queue, Reports & Integrity — architecture-v1.6
 
-# Audit
+Цей документ описує логічну модель, спільну для local SQLite та central PostgreSQL. PostgreSQL-specific оптимізації не є вимогою локального вузла.
+
+# 1. Audit
 
 ## audit_log
 
-Append-only canonical audit trail.
+Append-only журнал важливих дій.
 
-| Поле | Тип | Правила |
-|---|---|---|
-| id | uuid | PK |
-| company_id | uuid | NOT NULL |
-| occurred_at | timestamptz | NOT NULL |
-| actor_user_id | uuid | NULL |
-| actor_role | varchar(120) | NULL snapshot/context |
-| action | varchar(120) | NOT NULL |
-| entity_type | varchar(80) | NOT NULL |
-| entity_id | uuid | NULL |
-| request_id | uuid | NOT NULL |
-| correlation_id | uuid | NULL |
-| source | varchar(40) | NOT NULL |
-| ip_address | inet | NULL |
-| user_agent | text | NULL |
-| reason | text | NULL |
-| before_data | jsonb | NULL |
-| after_data | jsonb | NULL |
-| changed_fields | jsonb | NULL |
-| metadata | jsonb | NOT NULL DEFAULT `{}` |
-| entry_hash | char(64) | NULL |
+Мінімальні поля:
 
-Rules:
+| Поле | Призначення |
+|---|---|
+| id | UUID/unique id |
+| occurred_at | час події |
+| actor_user_id | хто виконав дію, nullable для system action |
+| action | стабільний код дії |
+| entity_type | тип сутності |
+| entity_id | id сутності |
+| request_id | кореляція локальної команди/API |
+| source | `LOCAL_APP`, `CENTRAL`, `SYSTEM`, інше контрольоване значення |
+| reason | причина, де потрібна |
+| before_data | optional serialized previous state |
+| after_data | optional serialized new state |
+| changed_fields | optional serialized field list |
+| metadata | додатковий контекст без секретів |
 
-- partition by RANGE(`occurred_at`) monthly after initial migration design;
-- runtime app role: `INSERT`, permitted `SELECT`, no UPDATE/DELETE;
-- sensitive values must be redacted/masked before insert according to audit policy;
-- actor may be NULL for trusted system processes, but `source` and service identity metadata must identify origin.
+Правила:
 
-Indexes per partition:
+- normal application flow не UPDATE/DELETE audit rows;
+- sensitive values маскуються до запису;
+- local audit працює в SQLite без partitioning;
+- central PostgreSQL може додати partitioning/indexes після підтвердженої потреби;
+- audit transfer preparation/approval/ACK/authority change є обов’язковим.
 
-- `(company_id,occurred_at DESC)`;
-- `(company_id,entity_type,entity_id,occurred_at)`;
-- `(company_id,actor_user_id,occurred_at)`;
-- `(request_id)`;
-- `(correlation_id)` where not null.
+# 2. Transfer batches
 
-## audit_partition_seals
+## transfer_batches
 
-| Поле | Тип | Правила |
-|---|---|---|
-| id | uuid | PK |
-| company_id | uuid | NOT NULL |
-| period_from | timestamptz | NOT NULL |
-| period_to | timestamptz | NOT NULL |
-| row_count | bigint | NOT NULL |
-| aggregate_hash | char(64) | NOT NULL |
-| sealed_at | timestamptz | NOT NULL |
-| storage_reference | text | NULL |
+Оператор працює з пакетом передачі, а не з технічними outbox rows.
 
-UNIQUE `(company_id,period_from,period_to)`.
+| Поле | Призначення |
+|---|---|
+| id | batch UUID |
+| origin_node_id | локальний node UUID |
+| status | `PENDING_APPROVAL`, `TRANSFERRING`, `FAILED`, `ACKNOWLEDGED`, `CANCELLED` |
+| prepared_reason | `MANUAL`, `CENTRAL_REQUEST`, `RULE` |
+| prepared_at | коли сформовано |
+| prepared_by | хто сформував, nullable для rule/request |
+| approved_by | локальний оператор, який підтвердив |
+| approved_at | час підтвердження |
+| started_at | початок передачі |
+| acknowledged_at | час central ACK |
+| central_ack_id | receipt центрального рівня |
+| last_error | остання технічна помилка |
+| retry_count | кількість повторів доставки |
 
-CHECK period_to > period_from; row_count >=0.
+Правила:
 
-Seal є defense-in-depth для виявлення несанкціонованої зміни audit history без global per-row hash serialization bottleneck.
+- без `approved_by/approved_at` batch не може перейти у `TRANSFERRING`;
+- central request або rule не заповнюють approval автоматично;
+- `ACKNOWLEDGED` ставиться лише після перевіреного central receipt;
+- failed delivery не змінює authority даних;
+- retry дозволений для того самого approved payload;
+- зміна складу/payload після approval вимагає нового approval.
 
----
+## transfer_items
 
-# Outbox
+| Поле | Призначення |
+|---|---|
+| transfer_batch_id | batch |
+| entity_type | тип aggregate/root entity |
+| entity_id | UUID |
+| entity_version | version на момент approval |
+| checksum | контроль approved payload |
+| transfer_order | deterministic order за потреби |
 
-## outbox_events
+PK/UNIQUE гарантує, що один item не дублюється в одному batch.
 
-| Поле | Тип | Правила |
-|---|---|---|
-| id | uuid | PK |
-| company_id | uuid | NOT NULL |
-| aggregate_type | varchar(80) | NOT NULL |
-| aggregate_id | uuid | NOT NULL |
-| event_type | varchar(120) | NOT NULL |
-| payload | jsonb | NOT NULL |
-| created_at | timestamptz | NOT NULL |
-| published_at | timestamptz | NULL |
-| attempt_count | integer | NOT NULL DEFAULT 0 |
-| last_attempt_at | timestamptz | NULL |
-| last_error | text | NULL |
+# 3. Business authority
 
-CHECK attempt_count >=0.
+Authority і transfer workflow — різні речі.
 
-Indexes:
+Для transferable aggregate/root зберігається:
 
-- partial `(created_at)` WHERE published_at IS NULL;
-- `(company_id,aggregate_type,aggregate_id,created_at)`.
+- `authority = LOCAL | CENTRAL`;
+- optional `transfer_lock_batch_id` для тимчасового блокування approved payload;
+- `central_version` / `central_ack_id` / `central_synced_at` після переходу на central.
 
-Workers consume rows via `FOR UPDATE SKIP LOCKED` or equivalent. Outbox row вставляється в тій самій transaction, що business state change.
+Правила:
 
-Retention published events визначається operations policy; purge не має видаляти canonical audit/business history.
+- до valid ACK authority = `LOCAL`;
+- `PENDING_APPROVAL`, `TRANSFERRING`, `FAILED` є статусами batch, не authority;
+- після operator approval records можуть мати temporary transfer lock;
+- failed/cancelled transfer не переводить authority у `CENTRAL`;
+- після verified ACK local transaction встановлює authority=`CENTRAL` і прибирає temporary transfer lock;
+- local backend відхиляє business UPDATE/DELETE для authority=`CENTRAL`.
 
----
+UI лише відображає цю заборону; гарантія знаходиться в backend і за можливості підсилюється SQLite trigger.
 
-# Reports
+# 4. Delivery outbox
 
-## report_exports
+## transfer_delivery_queue
 
-| Поле | Тип | Правила |
-|---|---|---|
-| id | uuid | PK |
-| company_id | uuid | NOT NULL |
-| report_type | varchar(100) | NOT NULL |
-| parameters | jsonb | NOT NULL DEFAULT `{}` |
-| requested_by | uuid | NOT NULL |
-| requested_at | timestamptz | NOT NULL |
-| status | varchar(20) | NOT NULL |
-| file_id | uuid | NULL |
-| completed_at | timestamptz | NULL |
-| error_code | varchar(100) | NULL |
-| expires_at | timestamptz | NULL |
+Outbox — технічна черга надійної доставки **вже схваленого** batch.
 
-CHECK status IN (`QUEUED`,`RUNNING`,`READY`,`FAILED`,`EXPIRED`).
+| Поле | Призначення |
+|---|---|
+| id | delivery id |
+| transfer_batch_id | batch |
+| created_at | створено |
+| available_at | коли можна повторити |
+| attempt_count | кількість спроб |
+| last_attempt_at | остання спроба |
+| last_error | технічна помилка |
+| completed_at | ACK оброблено |
 
-Indexes:
+Local SQLite має одного application-managed delivery worker. Немає потреби в `FOR UPDATE SKIP LOCKED`, Redis або queue broker.
 
-- `(company_id,requested_by,requested_at DESC)`;
-- `(status,requested_at)` for worker queue if separate job system not used.
+Central PostgreSQL при масштабуванні може мати кілька workers.
 
-Report export є derived artifact; його retention може бути коротшим за source business data.
+# 5. Central receive receipt
 
----
+Central endpoint приймає batch idempotently.
 
-# Integrity Monitoring
+Central зберігає щонайменше:
 
-## system_integrity_alerts
+- `origin_node_id`;
+- `transfer_batch_id` UNIQUE;
+- payload/checksum/version metadata;
+- received_at;
+- ack_id.
 
-| Поле | Тип | Правила |
-|---|---|---|
-| id | uuid | PK |
-| company_id | uuid | NOT NULL |
-| check_code | varchar(120) | NOT NULL |
-| severity | varchar(20) | NOT NULL |
-| entity_type | varchar(80) | NULL |
-| entity_id | uuid | NULL |
-| detected_at | timestamptz | NOT NULL |
-| details | jsonb | NOT NULL DEFAULT `{}` |
-| status | varchar(20) | NOT NULL |
-| acknowledged_at | timestamptz | NULL |
-| acknowledged_by | uuid | NULL |
-| resolved_at | timestamptz | NULL |
-| resolved_by | uuid | NULL |
-| resolution_comment | text | NULL |
+Повторне надсилання того самого незміненого batch повертає той самий логічний ACK і не дублює business rows.
 
-CHECK severity IN (`INFO`,`WARNING`,`ERROR`,`CRITICAL`).
+# 6. Central changes back to local
 
-CHECK status IN (`OPEN`,`ACKNOWLEDGED`,`RESOLVED`).
+Після authority=`CENTRAL` local copy є read-only.
 
-Indexes:
+Якщо central змінює запис, local може отримати нову version/snapshot. Це оновлення не повертає local edit rights.
 
-- `(company_id,status,severity,detected_at DESC)`;
-- `(company_id,check_code,detected_at DESC)`;
-- `(entity_type,entity_id)` where entity_id not null.
+# 7. Reports
 
-Integrity checker лише виявляє аномалію; він не silent-fix-ить production business history.
+Local reports можуть будуватися безпосередньо з SQLite.
 
-Приклади checks:
+Central reports можуть будуватися з PostgreSQL.
 
-- `CLOSED_TRIP_WITHOUT_SNAPSHOT`;
-- `AUTHORIZED_RELEASE_WITHOUT_AUTHORIZATION`;
-- `WAYBILL_CURRENT_VERSION_MISMATCH`;
-- `CLOSED_DUTY_WITH_OPEN_TRIP`;
-- `ORPHAN_OBJECT_FILE_REFERENCE`;
-- `VEHICLE_RUNTIME_PROJECTION_MISMATCH`;
-- `OUTBOX_STUCK`.
+`report_exports`/background report queue вводиться лише коли реальний report потребує async generation.
 
----
+# 8. Integrity Monitoring
 
-# Optional job execution table
+Початкові local checks:
 
-MVP може використати зовнішню job queue/Redis або DB-backed worker. Якщо обирається DB-backed job model, `background_jobs` має бути окремою технічною table і не змішуватися з `outbox_events`.
+- `CENTRAL_RECORD_EDIT_ATTEMPT`;
+- `ACKNOWLEDGED_BATCH_WITH_NONCENTRAL_ITEMS`;
+- `TRANSFERRING_BATCH_WITHOUT_APPROVAL`;
+- `TRANSFER_CHECKSUM_MISMATCH`;
+- `TRANSFER_LOCK_WITHOUT_ACTIVE_BATCH`;
+- `MISSING_LOCAL_DOCUMENT_FILE`;
+- `SQLITE_INTEGRITY_FAILURE`;
+- `BACKUP_OVERDUE`;
+- `DISK_SPACE_LOW`.
 
-Outbox = гарантія інтеграційної події після business transaction. Job queue = механізм виконання роботи. Це різні concepts.
+Checker не silent-fix-ить business history.
 
----
+# 9. Security logs
 
-# Security logs
+Failed login, role/permission changes, restore, backup, transfer approval та authority transition мають audit trace.
 
-Authentication failures, session revocations та permission changes мають audit/security trace. Якщо volume auth logs значно перевищить business audit, architecture може додати окрему partitioned `security_events` table, але M0 не робить її обов'язковою.
+Окрема high-volume security table не потрібна до появи реальної потреби.
 
----
+# 10. Що свідомо не робимо в M1.5
 
-# Derived read models
+- audit partitioning на local;
+- audit sealing infrastructure;
+- Kafka/RabbitMQ;
+- Redis queue;
+- multi-worker local processing;
+- event sourcing;
+- multi-master conflict resolution;
+- складні projection pipelines.
 
-Для MVP reports/boards дозволені:
+M1.5 повинен пройти сценарій:
 
-- SQL views;
-- materialized views;
-- rebuildable projection tables.
-
-Derived read model не стає canonical source of truth. Будь-яка projection table повинна мати documented rebuild strategy.
+`local edit → prepare batch → operator approve → temporary transfer lock → retry if needed → central ACK → authority LOCAL→CENTRAL → local read-only`.
