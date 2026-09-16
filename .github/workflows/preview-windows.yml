@@ -62,16 +62,32 @@ jobs:
       - name: Smoke test packaged application
         shell: pwsh
         run: |
+          $marker = Join-Path $env:RUNNER_TEMP "transport-erp-ready.txt"
+          Remove-Item $marker -Force -ErrorAction SilentlyContinue
+          $env:TRANSPORT_ERP_READINESS_MARKER = $marker
           $process = Start-Process `
             -FilePath "dist/TransportERP-UA-Preview/TransportERP-UA-Preview.exe" `
-            -ArgumentList "--smoke-test" `
             -PassThru
-          if (-not $process.WaitForExit(30000)) {
-            Stop-Process -Id $process.Id -Force
-            throw "Packaged TransportERP-UA preview smoke test timed out"
+
+          $ready = $false
+          for ($attempt = 0; $attempt -lt 60; $attempt++) {
+            if (Test-Path $marker) {
+              $ready = $true
+              break
+            }
+            if ($process.HasExited) {
+              break
+            }
+            Start-Sleep -Milliseconds 500
           }
-          if ($process.ExitCode -ne 0) {
-            throw "Packaged TransportERP-UA preview failed smoke test with exit code $($process.ExitCode)"
+
+          if (-not $process.HasExited) {
+            Stop-Process -Id $process.Id -Force
+          }
+          Remove-Item Env:TRANSPORT_ERP_READINESS_MARKER -ErrorAction SilentlyContinue
+
+          if (-not $ready) {
+            throw "Packaged TransportERP-UA preview did not reach local API/frontend readiness"
           }
 
       - name: Add preview notes
