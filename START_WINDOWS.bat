@@ -34,8 +34,22 @@ if not exist "frontend\out\index.html" (
     exit /b 1
 )
 
+if defined LOCALAPPDATA (
+    set "TRANSPORT_ERP_DATA_DIR=%LOCALAPPDATA%\TransportERP-UA"
+) else if defined APPDATA (
+    set "TRANSPORT_ERP_DATA_DIR=%APPDATA%\TransportERP-UA"
+) else (
+    set "TRANSPORT_ERP_DATA_DIR=%USERPROFILE%\TransportERP-UA-Data"
+)
+
+if not exist "%TRANSPORT_ERP_DATA_DIR%" mkdir "%TRANSPORT_ERP_DATA_DIR%" >nul 2>nul
+
+echo Working data: %TRANSPORT_ERP_DATA_DIR%
+echo Database:     %TRANSPORT_ERP_DATA_DIR%\transport-erp.sqlite3
+echo.
+
 if not exist ".venv\Scripts\python.exe" (
-    echo [1/3] Creating local Python environment...
+    echo [1/3] Creating local Python environment for this version...
     %PY_CMD% -m venv .venv
     if errorlevel 1 goto :fail
 )
