@@ -10,6 +10,7 @@ from transport_erp.api.local import router as local_router
 from transport_erp.api.operations import router as operations_router
 from transport_erp.api.release import router as release_router
 from transport_erp.api.security import SecurityContextMiddleware
+from transport_erp.api.waybills import router as waybills_router
 from transport_erp.config import get_settings
 from transport_erp.identity.api.router import router as identity_router
 from transport_erp.local_runtime import ensure_local_storage
@@ -33,6 +34,7 @@ def create_app() -> FastAPI:
     application.include_router(catalogs_router)
     application.include_router(operations_router)
     application.include_router(release_router)
+    application.include_router(waybills_router)
     application.include_router(identity_router)
 
     if settings.frontend_dir is not None:
