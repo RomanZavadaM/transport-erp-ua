@@ -114,6 +114,61 @@ def ensure_local_storage(settings: Settings) -> None:
                 PRIMARY KEY (route_id, position),
                 UNIQUE(route_id, stop_id)
             );
+
+            CREATE TABLE IF NOT EXISTS schedules (
+                id TEXT PRIMARY KEY,
+                company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE RESTRICT,
+                route_id TEXT NOT NULL REFERENCES routes(id) ON DELETE RESTRICT,
+                departure_time TEXT NOT NULL,
+                arrival_time TEXT NOT NULL,
+                active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                CHECK (departure_time < arrival_time),
+                UNIQUE(company_id, route_id, departure_time)
+            );
+
+            CREATE TABLE IF NOT EXISTS trips (
+                id TEXT PRIMARY KEY,
+                company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE RESTRICT,
+                schedule_id TEXT NOT NULL REFERENCES schedules(id) ON DELETE RESTRICT,
+                route_id TEXT NOT NULL REFERENCES routes(id) ON DELETE RESTRICT,
+                service_date TEXT NOT NULL,
+                planned_departure TEXT NOT NULL,
+                planned_arrival TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'PLANNED'
+                    CHECK (status IN ('PLANNED','ASSIGNED','CANCELLED','COMPLETED')),
+                created_at TEXT NOT NULL,
+                UNIQUE(schedule_id, service_date)
+            );
+
+            CREATE TABLE IF NOT EXISTS duties (
+                id TEXT PRIMARY KEY,
+                company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE RESTRICT,
+                service_date TEXT NOT NULL,
+                duty_number TEXT NOT NULL,
+                vehicle_id TEXT NOT NULL REFERENCES vehicles(id) ON DELETE RESTRICT,
+                driver_id TEXT NOT NULL REFERENCES drivers(id) ON DELETE RESTRICT,
+                status TEXT NOT NULL DEFAULT 'ASSIGNED'
+                    CHECK (status IN ('ASSIGNED','READY','CANCELLED','COMPLETED')),
+                created_at TEXT NOT NULL,
+                UNIQUE(company_id, service_date, duty_number)
+            );
+
+            CREATE TABLE IF NOT EXISTS duty_trips (
+                duty_id TEXT NOT NULL REFERENCES duties(id) ON DELETE CASCADE,
+                trip_id TEXT NOT NULL REFERENCES trips(id) ON DELETE RESTRICT,
+                position INTEGER NOT NULL CHECK (position >= 1),
+                PRIMARY KEY (duty_id, position),
+                UNIQUE(trip_id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_schedules_route
+                ON schedules(company_id, route_id, active, departure_time);
+            CREATE INDEX IF NOT EXISTS idx_trips_service_date
+                ON trips(company_id, service_date, planned_departure);
+            CREATE INDEX IF NOT EXISTS idx_duties_service_date
+                ON duties(company_id, service_date, duty_number);
             """
         )
         connection.execute(
