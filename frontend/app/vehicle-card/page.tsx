@@ -19,6 +19,19 @@ type OdometerItem = {
   note: string | null;
 };
 
+type FuelHistoryItem = {
+  id: string;
+  waybill_id: string;
+  waybill_number: string;
+  service_date: string;
+  driver_name: string;
+  fuel_start_liters: number;
+  fuel_issued_liters: number;
+  fuel_end_liters: number;
+  fuel_consumed_liters: number;
+  created_at: string;
+};
+
 type VehicleDetails = {
   id: string;
   fleet_number: string;
@@ -37,9 +50,14 @@ function getId(): string | null {
   return new URLSearchParams(window.location.search).get("id");
 }
 
+function formatDate(value: string): string {
+  return new Date(`${value}T00:00:00`).toLocaleDateString("uk-UA");
+}
+
 export default function VehicleCardPage() {
   const [vehicleId, setVehicleId] = useState<string | null>(null);
   const [vehicle, setVehicle] = useState<VehicleDetails | null>(null);
+  const [fuelHistory, setFuelHistory] = useState<FuelHistoryItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [documentType, setDocumentType] = useState("");
@@ -50,9 +68,14 @@ export default function VehicleCardPage() {
   const [odometerNote, setOdometerNote] = useState("");
 
   const load = useCallback(async (id: string) => {
-    const response = await fetch(`/api/vehicles/${id}/details`, { cache: "no-store" });
-    if (!response.ok) throw new Error("Не вдалося завантажити картку автобуса.");
-    setVehicle((await response.json()) as VehicleDetails);
+    const [detailsResponse, fuelResponse] = await Promise.all([
+      fetch(`/api/vehicles/${id}/details`, { cache: "no-store" }),
+      fetch(`/api/vehicles/${id}/fuel-history`, { cache: "no-store" }),
+    ]);
+    if (!detailsResponse.ok) throw new Error("Не вдалося завантажити картку автобуса.");
+    if (!fuelResponse.ok) throw new Error("Не вдалося завантажити історію пального.");
+    setVehicle((await detailsResponse.json()) as VehicleDetails);
+    setFuelHistory((await fuelResponse.json()) as FuelHistoryItem[]);
   }, []);
 
   useEffect(() => {
@@ -170,8 +193,37 @@ export default function VehicleCardPage() {
               <table>
                 <thead><tr><th>Дата</th><th>Показання</th><th>Примітка</th></tr></thead>
                 <tbody>
-                  {vehicle.odometer.map((item) => (
+                  {vehicle.odometer.length === 0 ? (
+                    <tr><td colSpan={3} className="muted">Показань одометра ще немає.</td></tr>
+                  ) : vehicle.odometer.map((item) => (
                     <tr key={item.id}><td>{new Date(item.recorded_at).toLocaleString("uk-UA")}</td><td>{item.reading_km.toLocaleString("uk-UA")} км</td><td>{item.note ?? "—"}</td></tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section className="panel">
+            <h2>Паливо за шляхівками</h2>
+            <p className="muted">Записи створюються автоматично після закриття шляхівки, якщо заповнені паливні показники.</p>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr><th>Дата</th><th>Шляхівка</th><th>Водій</th><th>На виїзді</th><th>Видано</th><th>На поверненні</th><th>Витрата</th></tr>
+                </thead>
+                <tbody>
+                  {fuelHistory.length === 0 ? (
+                    <tr><td colSpan={7} className="muted">Ще немає закритих шляхівок з паливними даними.</td></tr>
+                  ) : fuelHistory.map((item) => (
+                    <tr key={item.id}>
+                      <td>{formatDate(item.service_date)}</td>
+                      <td><Link href={`/waybill/?id=${encodeURIComponent(item.waybill_id)}`}>{item.waybill_number}</Link></td>
+                      <td>{item.driver_name || "—"}</td>
+                      <td>{item.fuel_start_liters.toLocaleString("uk-UA")} л</td>
+                      <td>{item.fuel_issued_liters.toLocaleString("uk-UA")} л</td>
+                      <td>{item.fuel_end_liters.toLocaleString("uk-UA")} л</td>
+                      <td><strong>{item.fuel_consumed_liters.toLocaleString("uk-UA")} л</strong></td>
+                    </tr>
                   ))}
                 </tbody>
               </table>
@@ -193,7 +245,9 @@ export default function VehicleCardPage() {
               <table>
                 <thead><tr><th>Документ</th><th>Номер</th><th>Дійсний до</th><th>Примітка</th></tr></thead>
                 <tbody>
-                  {vehicle.documents.map((item) => (
+                  {vehicle.documents.length === 0 ? (
+                    <tr><td colSpan={4} className="muted">Документів ще немає.</td></tr>
+                  ) : vehicle.documents.map((item) => (
                     <tr key={item.id}><td>{item.document_type}</td><td>{item.number}</td><td>{item.valid_until ? new Date(`${item.valid_until}T00:00:00`).toLocaleDateString("uk-UA") : "—"}</td><td>{item.note ?? "—"}</td></tr>
                   ))}
                 </tbody>
