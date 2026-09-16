@@ -11,6 +11,7 @@ from transport_erp.api.local import router as local_router
 from transport_erp.api.operations import router as operations_router
 from transport_erp.api.release import router as release_router
 from transport_erp.api.security import SecurityContextMiddleware
+from transport_erp.api.stoir import router as stoir_router
 from transport_erp.api.waybill_actuals import router as waybill_actuals_router
 from transport_erp.api.waybill_pdf_current import router as waybill_pdf_current_router
 from transport_erp.api.waybills import router as waybills_router
@@ -35,6 +36,7 @@ def create_app() -> FastAPI:
     application.include_router(fleet_router)
     application.include_router(details_router)
     application.include_router(fuel_router)
+    application.include_router(stoir_router)
     application.include_router(catalogs_router)
     application.include_router(operations_router)
     application.include_router(release_router)
