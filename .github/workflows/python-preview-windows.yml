@@ -3,13 +3,15 @@ name: Windows Python START Preview
 on:
   push:
     branches:
-      - work/v0.2-python-preview-r1
+      - 'work/v*-python-preview-*'
     paths:
       - PREVIEW_VERSION.txt
+      - PREVIEW_REVISION.txt
       - START_WINDOWS.bat
+      - OPEN_DATA_FOLDER.bat
       - README-PYTHON-PREVIEW.txt
       - CHECKPOINT_CURRENT.md
-      - CHECKPOINT_v0_2_r1.md
+      - CHECKPOINT_*.md
       - backend/**
       - frontend/**
       - .github/workflows/python-preview-windows.yml
@@ -32,10 +34,13 @@ jobs:
         shell: pwsh
         run: |
           $version = (Get-Content PREVIEW_VERSION.txt -Raw).Trim()
+          $revision = (Get-Content PREVIEW_REVISION.txt -Raw).Trim()
           if ([string]::IsNullOrWhiteSpace($version)) { throw "PREVIEW_VERSION.txt is empty" }
+          if ([string]::IsNullOrWhiteSpace($revision)) { throw "PREVIEW_REVISION.txt is empty" }
           "PREVIEW_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "PACKAGE_DIR=TransportERP-UA_v$($version)_TEST_r1_START" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "PACKAGE_ZIP=TransportERP-UA_v$($version)_TEST_r1_START.zip" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "PREVIEW_REVISION=$revision" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "PACKAGE_DIR=TransportERP-UA_v$($version)_TEST_$($revision)_START" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "PACKAGE_ZIP=TransportERP-UA_v$($version)_TEST_$($revision)_START.zip" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -75,10 +80,12 @@ jobs:
           New-Item -ItemType Directory -Path "$env:PACKAGE_DIR" -Force | Out-Null
           New-Item -ItemType Directory -Path "$env:PACKAGE_DIR\frontend\out" -Force | Out-Null
           Copy-Item "START_WINDOWS.bat" "$env:PACKAGE_DIR\START_WINDOWS.bat"
+          Copy-Item "OPEN_DATA_FOLDER.bat" "$env:PACKAGE_DIR\OPEN_DATA_FOLDER.bat"
           Copy-Item "README-PYTHON-PREVIEW.txt" "$env:PACKAGE_DIR\README-PYTHON-PREVIEW.txt"
           Copy-Item "PREVIEW_VERSION.txt" "$env:PACKAGE_DIR\PREVIEW_VERSION.txt"
+          Copy-Item "PREVIEW_REVISION.txt" "$env:PACKAGE_DIR\PREVIEW_REVISION.txt"
           Copy-Item "CHECKPOINT_CURRENT.md" "$env:PACKAGE_DIR\CHECKPOINT_CURRENT.md"
-          Copy-Item "CHECKPOINT_v0_2_r1.md" "$env:PACKAGE_DIR\CHECKPOINT_v0_2_r1.md"
+          Get-ChildItem "CHECKPOINT_*.md" | ForEach-Object { Copy-Item $_.FullName "$env:PACKAGE_DIR\$($_.Name)" }
           Copy-Item "backend" "$env:PACKAGE_DIR\backend" -Recurse
           Copy-Item "frontend\out\*" "$env:PACKAGE_DIR\frontend\out" -Recurse
 
@@ -100,7 +107,7 @@ jobs:
       - name: Upload START package
         uses: actions/upload-artifact@v4
         with:
-          name: TransportERP-UA-v${{ env.PREVIEW_VERSION }}-r1-START
+          name: TransportERP-UA-v${{ env.PREVIEW_VERSION }}-${{ env.PREVIEW_REVISION }}-START
           path: ${{ env.PACKAGE_ZIP }}
           if-no-files-found: error
           retention-days: 30
