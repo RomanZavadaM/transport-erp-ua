@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import pytest
 
-import transport_erp.config as config
 from transport_erp.config import Settings
 
 
@@ -17,7 +17,7 @@ def test_windows_data_location_does_not_depend_on_version_folder(
     version_r1.mkdir()
     version_r2.mkdir()
 
-    monkeypatch.setattr(config.sys, "platform", "win32")
+    monkeypatch.setattr(sys, "platform", "win32")
     monkeypatch.setenv("LOCALAPPDATA", str(local_app_data))
     monkeypatch.delenv("TRANSPORT_ERP_DATA_DIR", raising=False)
 
