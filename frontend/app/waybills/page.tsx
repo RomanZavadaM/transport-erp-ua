@@ -169,7 +169,7 @@ export default function WaybillsPage() {
         <div className="table-wrap">
           <table>
             <thead>
-              <tr><th>Номер</th><th>Наряд</th><th>Автобус</th><th>Водій</th><th>Рейси</th><th></th></tr>
+              <tr><th>Номер</th><th>Наряд</th><th>Автобус</th><th>Водій</th><th>Рейси</th><th>Дії</th></tr>
             </thead>
             <tbody>
               {waybills.length === 0 ? (
@@ -182,7 +182,19 @@ export default function WaybillsPage() {
                     <td>{waybill.vehicle_fleet_number} — {waybill.vehicle_registration_number}</td>
                     <td>{waybill.driver_name}</td>
                     <td>{waybill.trips.map((trip) => `${trip.planned_departure} №${trip.route_number}`).join(", ")}</td>
-                    <td><Link className="button secondary" href={`/waybill/?id=${encodeURIComponent(waybill.id)}`}>Відкрити</Link></td>
+                    <td>
+                      <div className="form-actions compact-actions">
+                        <Link className="button secondary" href={`/waybill/?id=${encodeURIComponent(waybill.id)}`}>Відкрити</Link>
+                        <a
+                          className="button secondary"
+                          href={`/api/waybills/${encodeURIComponent(waybill.id)}/pdf`}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          PDF 1-АП
+                        </a>
+                      </div>
+                    </td>
                   </tr>
                 ))
               )}
