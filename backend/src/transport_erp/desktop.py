@@ -61,6 +61,10 @@ def _check_local_api(base_url: str) -> None:
         if response.status != 200:
             raise RuntimeError("TransportERP-UA local status check failed")
 
+    with urllib.request.urlopen(f"{base_url}/", timeout=5.0) as response:  # noqa: S310
+        if response.status != 200:
+            raise RuntimeError("TransportERP-UA bundled frontend check failed")
+
 
 def main() -> None:
     frontend_dir = _find_frontend_dir()
@@ -88,6 +92,14 @@ def main() -> None:
     base_url = f"http://127.0.0.1:{port}"
     _wait_until_ready(f"{base_url}/health/live")
 
+    if "--smoke-test" in sys.argv[1:]:
+        try:
+            _check_local_api(base_url)
+        finally:
+            server.should_exit = True
+            thread.join(timeout=5.0)
+        return
+
     try:
         import webview  # type: ignore[import-not-found]
     except ImportError as exc:
@@ -96,14 +108,6 @@ def main() -> None:
         raise RuntimeError(
             "Desktop runtime is not installed. Install the project with the `desktop` extra."
         ) from exc
-
-    if "--smoke-test" in sys.argv[1:]:
-        try:
-            _check_local_api(base_url)
-        finally:
-            server.should_exit = True
-            thread.join(timeout=5.0)
-        return
 
     webview.create_window(
         "TransportERP-UA",
