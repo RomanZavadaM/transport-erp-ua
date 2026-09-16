@@ -56,6 +56,12 @@ def _wait_until_ready(url: str, timeout_seconds: float = 15.0) -> None:
     raise RuntimeError("TransportERP-UA local server did not start")
 
 
+def _check_local_api(base_url: str) -> None:
+    with urllib.request.urlopen(f"{base_url}/api/local/status", timeout=5.0) as response:  # noqa: S310
+        if response.status != 200:
+            raise RuntimeError("TransportERP-UA local status check failed")
+
+
 def main() -> None:
     frontend_dir = _find_frontend_dir()
     port = _free_port()
@@ -64,8 +70,12 @@ def main() -> None:
     os.environ.setdefault("TRANSPORT_ERP_ENVIRONMENT", "local")
     os.environ["TRANSPORT_ERP_FRONTEND_DIR"] = str(frontend_dir)
 
+    # Import only after the desktop environment is configured so the packaged
+    # FastAPI app mounts the bundled static frontend on first initialization.
+    from transport_erp.main import app as application
+
     config = uvicorn.Config(
-        "transport_erp.main:app",
+        application,
         host="127.0.0.1",
         port=port,
         log_level="warning",
@@ -82,9 +92,18 @@ def main() -> None:
         import webview  # type: ignore[import-not-found]
     except ImportError as exc:
         server.should_exit = True
+        thread.join(timeout=5.0)
         raise RuntimeError(
             "Desktop runtime is not installed. Install the project with the `desktop` extra."
         ) from exc
+
+    if "--smoke-test" in sys.argv[1:]:
+        try:
+            _check_local_api(base_url)
+        finally:
+            server.should_exit = True
+            thread.join(timeout=5.0)
+        return
 
     webview.create_window(
         "TransportERP-UA",
