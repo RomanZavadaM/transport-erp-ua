@@ -62,9 +62,13 @@ jobs:
       - name: Smoke test packaged application
         shell: pwsh
         run: |
-          & "dist/TransportERP-UA-Preview/TransportERP-UA-Preview.exe" --smoke-test
-          if ($LASTEXITCODE -ne 0) {
-            throw "Packaged TransportERP-UA preview failed smoke test with exit code $LASTEXITCODE"
+          $process = Start-Process `
+            -FilePath "dist/TransportERP-UA-Preview/TransportERP-UA-Preview.exe" `
+            -ArgumentList "--smoke-test" `
+            -Wait `
+            -PassThru
+          if ($process.ExitCode -ne 0) {
+            throw "Packaged TransportERP-UA preview failed smoke test with exit code $($process.ExitCode)"
           }
 
       - name: Add preview notes
