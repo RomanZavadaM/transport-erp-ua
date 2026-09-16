@@ -65,8 +65,11 @@ jobs:
           $process = Start-Process `
             -FilePath "dist/TransportERP-UA-Preview/TransportERP-UA-Preview.exe" `
             -ArgumentList "--smoke-test" `
-            -Wait `
             -PassThru
+          if (-not $process.WaitForExit(30000)) {
+            Stop-Process -Id $process.Id -Force
+            throw "Packaged TransportERP-UA preview smoke test timed out"
+          }
           if ($process.ExitCode -ne 0) {
             throw "Packaged TransportERP-UA preview failed smoke test with exit code $($process.ExitCode)"
           }
