@@ -28,7 +28,7 @@ if not defined PY_CMD (
 
 if not exist "frontend\out\index.html" (
     echo [ERROR] Prepared frontend was not found: frontend\out\index.html
-    echo Use the Python Preview ZIP produced by the project workflow.
+    echo Use the START ZIP produced by the project workflow.
     echo.
     pause
     exit /b 1
@@ -47,7 +47,7 @@ if errorlevel 1 (
     echo [2/3] Installing TransportERP-UA dependencies...
     "%VENV_PY%" -m pip install --upgrade pip
     if errorlevel 1 goto :fail
-    "%VENV_PY%" -m pip install -e ".\backend[desktop]"
+    "%VENV_PY%" -m pip install ".\backend[desktop]"
     if errorlevel 1 goto :fail
 ) else (
     echo [2/3] Python environment is ready.
