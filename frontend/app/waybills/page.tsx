@@ -187,7 +187,7 @@ export default function WaybillsPage() {
                         <Link className="button secondary" href={`/waybill/?id=${encodeURIComponent(waybill.id)}`}>Відкрити</Link>
                         <a
                           className="button secondary"
-                          href={`/api/waybills/${encodeURIComponent(waybill.id)}/pdf`}
+                          href={`/api/waybills/${encodeURIComponent(waybill.id)}/pdf-current`}
                           target="_blank"
                           rel="noreferrer"
                         >
