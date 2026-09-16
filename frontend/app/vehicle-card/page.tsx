@@ -154,7 +154,10 @@ export default function VehicleCardPage() {
             </p>
           ) : null}
         </div>
-        <Link className="button secondary" href="/vehicles/">До списку автобусів</Link>
+        <div className="page-toolbar-actions">
+          {vehicle ? <Link className="button" href={`/stoir/?id=${encodeURIComponent(vehicle.id)}`}>СТОІР / ТО і огляди</Link> : null}
+          <Link className="button secondary" href="/vehicles/">До списку автобусів</Link>
+        </div>
       </div>
 
       {message ? <p className="notice success">{message}</p> : null}
