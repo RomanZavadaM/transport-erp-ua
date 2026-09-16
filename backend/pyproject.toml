@@ -52,6 +52,11 @@ select = ["E", "F", "I", "UP", "B"]
 # E501 is formatting only and must not block functional preview builds.
 ignore = ["B008", "E501"]
 
+[tool.ruff.lint.per-file-ignores]
+# Taxo-compatible / established files are kept stable unless a functional change needs touching them.
+"src/transport_erp/api/stoir.py" = ["UP037"]
+"src/transport_erp/api/waybills.py" = ["F401"]
+
 [tool.mypy]
 python_version = "3.12"
 strict = true
