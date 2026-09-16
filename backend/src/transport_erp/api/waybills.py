@@ -64,6 +64,38 @@ class WaybillResponse(BaseModel):
     trips: list[WaybillTrip]
 
 
+def _ensure_release_storage(connection: sqlite3.Connection) -> None:
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS duty_release_controls (
+            duty_id TEXT PRIMARY KEY REFERENCES duties(id) ON DELETE CASCADE,
+            company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE RESTRICT,
+            medical_result TEXT NOT NULL DEFAULT 'PENDING'
+                CHECK (medical_result IN ('PENDING','PASSED','FAILED')),
+            medical_checked_by TEXT,
+            medical_checked_at TEXT,
+            medical_note TEXT,
+            technical_result TEXT NOT NULL DEFAULT 'PENDING'
+                CHECK (technical_result IN ('PENDING','PASSED','FAILED')),
+            technical_checked_by TEXT,
+            technical_checked_at TEXT,
+            technical_note TEXT,
+            dispatcher_result TEXT NOT NULL DEFAULT 'PENDING'
+                CHECK (dispatcher_result IN ('PENDING','APPROVED','REJECTED')),
+            dispatcher_checked_by TEXT,
+            dispatcher_checked_at TEXT,
+            dispatcher_note TEXT,
+            released_at TEXT,
+            updated_at TEXT NOT NULL
+        )
+        """
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_release_controls_company "
+        "ON duty_release_controls(company_id)"
+    )
+
+
 @contextmanager
 def _connection(*, write: bool = False) -> Iterator[sqlite3.Connection]:
     settings = get_settings()
@@ -74,6 +106,7 @@ def _connection(*, write: bool = False) -> Iterator[sqlite3.Connection]:
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys=ON")
     connection.execute("PRAGMA busy_timeout=5000")
+    _ensure_release_storage(connection)
     connection.execute(
         """
         CREATE TABLE IF NOT EXISTS waybills (
