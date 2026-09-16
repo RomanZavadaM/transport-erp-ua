@@ -81,7 +81,7 @@ def test_waybill_actuals_are_saved_and_calculated(client: TestClient) -> None:
     assert loaded.json()["odometer_end"] == 125042
 
 
-def test_close_waybill_updates_trip_duty_and_odometer_history(client: TestClient) -> None:
+def test_close_waybill_updates_trip_duty_odometer_and_fuel_history(client: TestClient) -> None:
     waybill_id, duty_id = _create_released_waybill(client)
     saved = client.put(
         f"/api/waybills/{waybill_id}/actuals",
@@ -112,11 +112,12 @@ def test_close_waybill_updates_trip_duty_and_odometer_history(client: TestClient
     with sqlite3.connect(settings.local_database_path) as connection:
         connection.row_factory = sqlite3.Row
         duty = connection.execute(
-            "SELECT status FROM duties WHERE id = ?",
+            "SELECT status, vehicle_id FROM duties WHERE id = ?",
             (duty_id,),
         ).fetchone()
         assert duty is not None
         assert duty["status"] == "COMPLETED"
+        vehicle_id = str(duty["vehicle_id"])
 
         trip_statuses = connection.execute(
             """
@@ -140,6 +141,50 @@ def test_close_waybill_updates_trip_duty_and_odometer_history(client: TestClient
         assert [row["reading_km"] for row in odometer] == [125000, 125042]
         assert "виїзд" in str(odometer[0]["note"])
         assert "повернення" in str(odometer[1]["note"])
+
+    fuel_history = client.get(f"/api/vehicles/{vehicle_id}/fuel-history")
+    assert fuel_history.status_code == 200
+    rows = fuel_history.json()
+    assert len(rows) == 1
+    assert rows[0]["waybill_id"] == waybill_id
+    assert rows[0]["waybill_number"] == "ШЛ-500"
+    assert rows[0]["fuel_start_liters"] == 40.0
+    assert rows[0]["fuel_issued_liters"] == 10.0
+    assert rows[0]["fuel_end_liters"] == 35.0
+    assert rows[0]["fuel_consumed_liters"] == 15.0
+
+
+def test_closed_waybill_without_fuel_does_not_create_fake_fuel_history(
+    client: TestClient,
+) -> None:
+    waybill_id, duty_id = _create_released_waybill(client)
+    assert client.put(
+        f"/api/waybills/{waybill_id}/actuals",
+        json={
+            "actual_departure": "2026-09-20T08:03:00",
+            "actual_return": "2026-09-20T09:08:00",
+            "odometer_start": 125000,
+            "odometer_end": 125042,
+            "fuel_start_liters": None,
+            "fuel_issued_liters": None,
+            "fuel_end_liters": None,
+            "note": None,
+        },
+    ).status_code == 200
+    assert client.post(f"/api/waybills/{waybill_id}/close").status_code == 200
+
+    settings = get_settings()
+    with sqlite3.connect(settings.local_database_path) as connection:
+        vehicle_id_row = connection.execute(
+            "SELECT vehicle_id FROM duties WHERE id = ?",
+            (duty_id,),
+        ).fetchone()
+        assert vehicle_id_row is not None
+        vehicle_id = str(vehicle_id_row[0])
+
+    history = client.get(f"/api/vehicles/{vehicle_id}/fuel-history")
+    assert history.status_code == 200
+    assert history.json() == []
 
 
 def test_closed_waybill_cannot_be_edited(client: TestClient) -> None:
