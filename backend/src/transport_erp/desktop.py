@@ -100,7 +100,7 @@ def main() -> None:
         os._exit(0)
 
     try:
-        import webview  # type: ignore[import-not-found]
+        import webview
     except ImportError as exc:
         server.should_exit = True
         thread.join(timeout=5.0)
