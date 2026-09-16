@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import sqlite3
-import tempfile
 import zipfile
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -159,33 +158,32 @@ def create_local_backup(settings: Settings) -> BackupResult:
     stamp = created_at.strftime("%Y%m%d-%H%M%S")
     archive_path = settings.resolved_backup_dir / f"TransportERP-UA-backup-{stamp}.zip"
 
-    with tempfile.TemporaryDirectory(prefix="transport-erp-backup-") as temp_dir_name:
-        temp_dir = Path(temp_dir_name)
-        database_copy = temp_dir / "transport-erp.sqlite3"
+    # Build the SQLite snapshot in memory. This uses SQLite's backup API but avoids
+    # a temporary database file that Windows may keep locked during cleanup.
+    with sqlite3.connect(settings.local_database_path) as source:
+        with sqlite3.connect(":memory:") as destination:
+            source.backup(destination)
+            database_bytes = destination.serialize()
 
-        with sqlite3.connect(settings.local_database_path) as source:
-            with sqlite3.connect(database_copy) as destination:
-                source.backup(destination)
+    with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("database/transport-erp.sqlite3", database_bytes)
 
-        with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-            archive.write(database_copy, arcname="database/transport-erp.sqlite3")
+        for file_path in settings.resolved_documents_dir.rglob("*"):
+            if file_path.is_file():
+                relative = file_path.relative_to(settings.resolved_documents_dir)
+                archive.write(file_path, arcname=str(Path("documents") / relative))
 
-            for file_path in settings.resolved_documents_dir.rglob("*"):
-                if file_path.is_file():
-                    relative = file_path.relative_to(settings.resolved_documents_dir)
-                    archive.write(file_path, arcname=str(Path("documents") / relative))
-
-            archive.writestr(
-                "backup-info.txt",
-                "\n".join(
-                    [
-                        "TransportERP-UA local backup",
-                        f"created_at={created_at.isoformat()}",
-                        f"source_database={settings.local_database_path}",
-                    ]
-                )
-                + "\n",
+        archive.writestr(
+            "backup-info.txt",
+            "\n".join(
+                [
+                    "TransportERP-UA local backup",
+                    f"created_at={created_at.isoformat()}",
+                    f"source_database={settings.local_database_path}",
+                ]
             )
+            + "\n",
+        )
 
     return BackupResult(
         path=archive_path,
