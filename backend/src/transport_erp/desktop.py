@@ -66,6 +66,14 @@ def _check_local_api(base_url: str) -> None:
             raise RuntimeError("TransportERP-UA bundled frontend check failed")
 
 
+def _write_readiness_marker(base_url: str) -> None:
+    marker = os.getenv("TRANSPORT_ERP_READINESS_MARKER")
+    if not marker:
+        return
+    _check_local_api(base_url)
+    Path(marker).write_text("ready\n", encoding="utf-8")
+
+
 def main() -> None:
     frontend_dir = _find_frontend_dir()
     port = _free_port()
@@ -91,14 +99,7 @@ def main() -> None:
 
     base_url = f"http://127.0.0.1:{port}"
     _wait_until_ready(f"{base_url}/health/live")
-
-    if "--smoke-test" in sys.argv[1:]:
-        try:
-            _check_local_api(base_url)
-        finally:
-            server.should_exit = True
-            thread.join(timeout=5.0)
-        return
+    _write_readiness_marker(base_url)
 
     try:
         import webview  # type: ignore[import-not-found]
