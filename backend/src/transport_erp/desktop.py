@@ -46,14 +46,16 @@ def _free_port() -> int:
 
 def _wait_until_ready(url: str, timeout_seconds: float = 15.0) -> None:
     deadline = time.monotonic() + timeout_seconds
+    last_error: Exception | None = None
     while time.monotonic() < deadline:
         try:
             with urllib.request.urlopen(url, timeout=1.0) as response:  # noqa: S310
                 if response.status == 200:
                     return
-        except (urllib.error.URLError, TimeoutError):
+        except (urllib.error.URLError, TimeoutError) as exc:
+            last_error = exc
             time.sleep(0.1)
-    raise RuntimeError("TransportERP-UA local server did not start")
+    raise RuntimeError(f"TransportERP-UA local server did not start: {last_error!r}")
 
 
 def _check_local_api(base_url: str) -> None:
@@ -64,14 +66,6 @@ def _check_local_api(base_url: str) -> None:
     with urllib.request.urlopen(f"{base_url}/", timeout=5.0) as response:  # noqa: S310
         if response.status != 200:
             raise RuntimeError("TransportERP-UA bundled frontend check failed")
-
-
-def _write_readiness_marker(base_url: str) -> None:
-    marker = os.getenv("TRANSPORT_ERP_READINESS_MARKER")
-    if not marker:
-        return
-    _check_local_api(base_url)
-    Path(marker).write_text("ready\n", encoding="utf-8")
 
 
 def main() -> None:
@@ -99,7 +93,11 @@ def main() -> None:
 
     base_url = f"http://127.0.0.1:{port}"
     _wait_until_ready(f"{base_url}/health/live")
-    _write_readiness_marker(base_url)
+    _check_local_api(base_url)
+
+    if os.getenv("TRANSPORT_ERP_SMOKE_TEST_ONLY") == "1":
+        server.should_exit = True
+        os._exit(0)
 
     try:
         import webview  # type: ignore[import-not-found]
