@@ -1,16 +1,20 @@
 from __future__ import annotations
 
+import re
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, date, datetime
+from pathlib import Path
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from transport_erp.config import get_settings
 from transport_erp.local_runtime import ensure_local_storage
+from transport_erp.waybill_pdf import build_waybill_pdf
 
 router = APIRouter(prefix="/api", tags=["Waybills"])
 
@@ -250,6 +254,97 @@ def _load_waybill(
     )
 
 
+def _waybill_route_stops(connection: sqlite3.Connection, duty_id: str) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+    route = connection.execute(
+        """
+        SELECT t.route_id
+        FROM duty_trips dt
+        JOIN trips t ON t.id = dt.trip_id
+        WHERE dt.duty_id = ?
+        ORDER BY dt.position
+        LIMIT 1
+        """,
+        (duty_id,),
+    ).fetchone()
+    if route is None:
+        return [], []
+    rows = connection.execute(
+        """
+        SELECT s.name, s.locality, rs.position
+        FROM route_stops rs
+        JOIN stops s ON s.id = rs.stop_id
+        WHERE rs.route_id = ?
+        ORDER BY rs.position
+        """,
+        (str(route["route_id"]),),
+    ).fetchall()
+    outbound = [
+        {
+            "stop_name": " — ".join(
+                value for value in [str(row["name"]), str(row["locality"] or "")] if value
+            ),
+            "arrival_time": "",
+            "departure_time": "",
+            "day_offset": "0",
+            "point_type": "Зупинка",
+            "note": "",
+        }
+        for row in rows
+    ]
+    return outbound[:15], list(reversed(outbound))[:15]
+
+
+def _safe_pdf_name(number: str) -> str:
+    cleaned = re.sub(r"[^0-9A-Za-zА-Яа-яІіЇїЄєҐґ._-]+", "_", number.strip())
+    return cleaned or "waybill"
+
+
+def _format_work_date(value: str) -> str:
+    return datetime.strptime(value, "%Y-%m-%d").strftime("%d.%m.%Y")
+
+
+def _build_pdf_data(
+    connection: sqlite3.Connection, waybill: WaybillResponse
+) -> dict[str, object]:
+    outbound, returning = _waybill_route_stops(connection, waybill.duty_id)
+    first_trip = waybill.trips[0] if waybill.trips else None
+    last_trip = waybill.trips[-1] if waybill.trips else None
+    route_labels = []
+    for trip in waybill.trips:
+        label = f"{trip.route_number} / {trip.route_name}".strip(" /")
+        if label not in route_labels:
+            route_labels.append(label)
+
+    return {
+        "company_name": waybill.company_name,
+        "waybill_no": waybill.number,
+        "waybill_series": "",
+        "date": _format_work_date(waybill.service_date),
+        "work_date": waybill.service_date,
+        "route": ", ".join(route_labels),
+        "route_code": first_trip.route_number if first_trip else "",
+        "schedule_code": waybill.duty_number,
+        "vehicle": " · ".join(
+            value
+            for value in [
+                f"{waybill.vehicle_make} {waybill.vehicle_model}".strip(),
+                waybill.vehicle_registration_number,
+                f"гар. № {waybill.vehicle_fleet_number}",
+            ]
+            if value
+        ),
+        "driver": waybill.driver_name,
+        "driver_personnel_no": waybill.driver_personnel_number,
+        "planned_departure": first_trip.planned_departure if first_trip else "",
+        "planned_return": last_trip.planned_arrival if last_trip else "",
+        "doctor_1": waybill.medical_checked_by or "",
+        "mechanic_1": waybill.technical_checked_by or "",
+        "outbound_stops": outbound,
+        "return_stops": returning,
+        "start_direction": "outbound",
+    }
+
+
 @router.get("/waybill-candidates", response_model=list[WaybillCandidate])
 def list_waybill_candidates(service_date: date = Query(...)) -> list[WaybillCandidate]:
     with _connection() as connection:
@@ -312,6 +407,29 @@ def list_waybills(service_date: date = Query(...)) -> list[WaybillResponse]:
 def get_waybill(waybill_id: str) -> WaybillResponse:
     with _connection() as connection:
         return _load_waybill(connection, _company_id(connection), waybill_id)
+
+
+@router.get("/waybills/{waybill_id}/pdf", response_class=FileResponse)
+def get_waybill_pdf(waybill_id: str) -> FileResponse:
+    settings = get_settings()
+    with _connection() as connection:
+        waybill = _load_waybill(connection, _company_id(connection), waybill_id)
+        data = _build_pdf_data(connection, waybill)
+
+    work_date = datetime.strptime(waybill.service_date, "%Y-%m-%d")
+    output_dir = (
+        settings.resolved_documents_dir
+        / "waybills"
+        / work_date.strftime("%Y")
+        / work_date.strftime("%m")
+    )
+    output_path = output_dir / f"Waybill_{_safe_pdf_name(waybill.number)}.pdf"
+    build_waybill_pdf(None, output_path, data)
+    return FileResponse(
+        path=output_path,
+        media_type="application/pdf",
+        filename=output_path.name,
+    )
 
 
 @router.post("/waybills", response_model=WaybillResponse, status_code=201)
