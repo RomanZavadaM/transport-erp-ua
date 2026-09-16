@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from transport_erp.config import get_settings
+from transport_erp.fuel import record_waybill_fuel_history
 from transport_erp.local_runtime import ensure_local_storage
 
 router = APIRouter(prefix="/api", tags=["Waybill actuals"])
@@ -345,6 +346,17 @@ def close_waybill(waybill_id: str) -> WaybillActualResponse:
                 actuals.actual_return.isoformat(),
                 f"{note} — повернення",
             ),
+        )
+
+        record_waybill_fuel_history(
+            connection,
+            vehicle_id=str(waybill["vehicle_id"]),
+            driver_id=str(waybill["driver_id"]) if waybill["driver_id"] is not None else None,
+            waybill_id=waybill_id,
+            service_date=str(waybill["service_date"]),
+            fuel_start_liters=actuals.fuel_start_liters,
+            fuel_issued_liters=actuals.fuel_issued_liters,
+            fuel_end_liters=actuals.fuel_end_liters,
         )
 
         closed_at = datetime.now(UTC).isoformat()
