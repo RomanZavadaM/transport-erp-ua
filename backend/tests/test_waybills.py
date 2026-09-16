@@ -176,3 +176,21 @@ def test_waybill_can_be_loaded_by_id(client: TestClient) -> None:
     loaded = client.get(f"/api/waybills/{created.json()['id']}")
     assert loaded.status_code == 200
     assert loaded.json()["number"] == "ШЛ-001"
+
+
+def test_waybill_taxo_pdf_is_generated_in_persistent_documents(
+    client: TestClient, tmp_path: Path
+) -> None:
+    duty_id = _create_duty(client)
+    _release(client, duty_id)
+    created = client.post("/api/waybills", json={"duty_id": duty_id, "number": "ШЛ-001"})
+    assert created.status_code == 201
+
+    response = client.get(f"/api/waybills/{created.json()['id']}/pdf")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/pdf")
+    assert response.content.startswith(b"%PDF")
+
+    expected = tmp_path / "data" / "documents" / "waybills" / "2026" / "09" / "Waybill_ШЛ-001.pdf"
+    assert expected.is_file()
+    assert expected.read_bytes().startswith(b"%PDF")
