@@ -8,6 +8,7 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
+from typing import Any
 
 import uvicorn
 
@@ -68,6 +69,21 @@ def _check_local_api(base_url: str) -> None:
             raise RuntimeError("TransportERP-UA bundled frontend check failed")
 
 
+def _create_uvicorn_config(application: Any, port: int) -> uvicorn.Config:
+    """Create a console-independent Uvicorn configuration for desktop bundles."""
+    return uvicorn.Config(
+        application,
+        host="127.0.0.1",
+        port=port,
+        log_level="warning",
+        access_log=False,
+        # PyInstaller --windowed sets sys.stdout/sys.stderr to None on Windows.
+        # Uvicorn's default logging formatter calls isatty() on those streams,
+        # so desktop bundles must not install the console-oriented log config.
+        log_config=None,
+    )
+
+
 def _run_packaged_preflight(frontend_dir: Path) -> None:
     """Validate the frozen runtime without starting GUI/server threads."""
     if not (frontend_dir / "index.html").is_file():
@@ -88,6 +104,10 @@ def _run_packaged_preflight(frontend_dir: Path) -> None:
     if application is None:
         raise RuntimeError("FastAPI application was not initialized")
 
+    # Construct the exact Uvicorn configuration used by the real desktop launch.
+    # This specifically guards Windows --windowed builds, where stdout/stderr are None.
+    _create_uvicorn_config(application, 0)
+
 
 def main() -> None:
     frontend_dir = _find_frontend_dir()
@@ -106,13 +126,7 @@ def main() -> None:
     # FastAPI app mounts the bundled static frontend on first initialization.
     from transport_erp.main import app as application
 
-    config = uvicorn.Config(
-        application,
-        host="127.0.0.1",
-        port=port,
-        log_level="warning",
-        access_log=False,
-    )
+    config = _create_uvicorn_config(application, port)
     server = uvicorn.Server(config)
     thread = threading.Thread(target=server.run, name="transport-erp-local-api", daemon=True)
     thread.start()

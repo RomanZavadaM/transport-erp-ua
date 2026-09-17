@@ -1,4 +1,4 @@
-name: Build and publish TransportERP-UA v0.2 r8 executables
+name: Build and publish TransportERP-UA v0.2 r8.1 executables
 
 on:
   workflow_dispatch:
@@ -6,8 +6,9 @@ on:
     branches:
       - main
     paths:
-      - '.github/workflows/publish-v0.2-r8.yml'
+      - '.github/workflows/publish-v0.2-r8-1.yml'
       - 'backend/src/transport_erp/desktop.py'
+      - 'RELEASE_NOTES_v0_2_r8_1.md'
 
 permissions:
   contents: write
@@ -17,10 +18,10 @@ jobs:
     runs-on: ubuntu-latest
     env:
       PYTHONUTF8: '1'
-      PACKAGE_DIR: TransportERP-UA_v0_2_TEST_r8_START
-      PACKAGE_ZIP: TransportERP-UA_v0_2_TEST_r8_START.zip
+      PACKAGE_DIR: TransportERP-UA_v0_2_TEST_r8_1_START
+      PACKAGE_ZIP: TransportERP-UA_v0_2_TEST_r8_1_START.zip
     steps:
-      - name: Checkout r8 source
+      - name: Checkout hotfix source
         uses: actions/checkout@v4
 
       - name: Set up Python 3.12
@@ -61,7 +62,7 @@ jobs:
         run: |
           mkdir -p "$PACKAGE_DIR/frontend/out"
           cp START_WINDOWS.bat OPEN_DATA_FOLDER.bat README-PYTHON-PREVIEW.txt "$PACKAGE_DIR/"
-          cp PREVIEW_VERSION.txt PREVIEW_REVISION.txt CHECKPOINT_CURRENT.md CHECKPOINT_v0_2_r8.md RELEASE_NOTES_v0_2_r8.md "$PACKAGE_DIR/"
+          cp PREVIEW_VERSION.txt PREVIEW_REVISION.txt CHECKPOINT_CURRENT.md CHECKPOINT_v0_2_r8.md RELEASE_NOTES_v0_2_r8.md RELEASE_NOTES_v0_2_r8_1.md "$PACKAGE_DIR/"
           cp -R backend "$PACKAGE_DIR/backend"
           cp -R frontend/out/. "$PACKAGE_DIR/frontend/out/"
           find "$PACKAGE_DIR" -type d \( -name '__pycache__' -o -name '.pytest_cache' -o -name '.mypy_cache' -o -name '.ruff_cache' -o -name '.venv' \) -prune -exec rm -rf '{}' + || true
@@ -75,8 +76,8 @@ jobs:
       - name: Upload START package
         uses: actions/upload-artifact@v4
         with:
-          name: TransportERP-UA-v0.2-r8-START
-          path: TransportERP-UA_v0_2_TEST_r8_START.zip
+          name: TransportERP-UA-v0.2-r8.1-START
+          path: TransportERP-UA_v0_2_TEST_r8_1_START.zip
           if-no-files-found: error
           retention-days: 90
 
@@ -84,11 +85,11 @@ jobs:
     runs-on: windows-latest
     env:
       PYTHONUTF8: '1'
-      BUNDLE_DIR: TransportERP-UA_v0_2_TEST_r8_Windows_x64
-      BUNDLE_ZIP: TransportERP-UA_v0_2_TEST_r8_Windows_x64_Portable.zip
-      SETUP_EXE: TransportERP-UA_v0_2_TEST_r8_Setup_Windows_x64.exe
+      BUNDLE_DIR: TransportERP-UA_v0_2_TEST_r8_1_Windows_x64
+      BUNDLE_ZIP: TransportERP-UA_v0_2_TEST_r8_1_Windows_x64_Portable.zip
+      SETUP_EXE: TransportERP-UA_v0_2_TEST_r8_1_Setup_Windows_x64.exe
     steps:
-      - name: Checkout r8 source
+      - name: Checkout hotfix source
         uses: actions/checkout@v4
 
       - name: Set up Node 22
@@ -134,7 +135,7 @@ jobs:
             'backend/src/transport_erp/desktop.py'
           Move-Item 'dist/TransportERP-UA' "dist/$env:BUNDLE_DIR"
 
-      - name: Verify Windows bundle
+      - name: Verify Windows windowed bundle
         shell: pwsh
         run: |
           $bundle = "dist/$env:BUNDLE_DIR"
@@ -150,7 +151,7 @@ jobs:
           Remove-Item Env:TRANSPORT_ERP_SMOKE_TEST_ONLY -ErrorAction SilentlyContinue
           if ($process.ExitCode -ne 0) { throw "Windows smoke test failed with exit code $($process.ExitCode)" }
           $notes = @"
-          TransportERP-UA v0.2 TEST r8 — Windows x64 portable
+          TransportERP-UA v0.2 TEST r8.1 — Windows x64 portable
 
           Дані не зберігаються в цій папці.
           Робоча БД/документи/backup: %LOCALAPPDATA%\TransportERP-UA
@@ -170,16 +171,16 @@ jobs:
             $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
           }
           if (!(Test-Path $iscc)) { throw 'Inno Setup compiler not found' }
-          & $iscc '/DMyAppVersion=0.2-r8' "/DBundleDir=dist\$env:BUNDLE_DIR" "/DOutputBaseFilename=$($env:SETUP_EXE -replace '\.exe$','')" 'installer\TransportERP-UA.iss'
+          & $iscc '/DMyAppVersion=0.2-r8.1' "/DBundleDir=dist\$env:BUNDLE_DIR" "/DOutputBaseFilename=$($env:SETUP_EXE -replace '\.exe$','')" 'installer\TransportERP-UA.iss'
           if (!(Test-Path "release_out/$env:SETUP_EXE")) { throw 'Windows installer not found' }
 
       - name: Upload Windows packages
         uses: actions/upload-artifact@v4
         with:
-          name: TransportERP-UA-v0.2-r8-Windows-x64
+          name: TransportERP-UA-v0.2-r8.1-Windows-x64
           path: |
-            TransportERP-UA_v0_2_TEST_r8_Windows_x64_Portable.zip
-            release_out/TransportERP-UA_v0_2_TEST_r8_Setup_Windows_x64.exe
+            TransportERP-UA_v0_2_TEST_r8_1_Windows_x64_Portable.zip
+            release_out/TransportERP-UA_v0_2_TEST_r8_1_Setup_Windows_x64.exe
           if-no-files-found: error
           retention-days: 90
 
@@ -197,7 +198,7 @@ jobs:
     env:
       PYTHONUTF8: '1'
     steps:
-      - name: Checkout r8 source
+      - name: Checkout hotfix source
         uses: actions/checkout@v4
 
       - name: Verify runner architecture
@@ -232,7 +233,7 @@ jobs:
           python -m pip install -e './backend[desktop]'
           python -m pip install 'pyinstaller>=6.10,<7.0'
 
-      - name: Build macOS application
+      - name: Build and verify macOS application
         shell: bash
         run: |
           python -m PyInstaller \
@@ -258,11 +259,11 @@ jobs:
       - name: Create macOS Portable ZIP
         shell: bash
         run: |
-          bundle_dir="TransportERP-UA_v0_2_TEST_r8_macOS_${{ matrix.arch }}"
+          bundle_dir="TransportERP-UA_v0_2_TEST_r8_1_macOS_${{ matrix.arch }}"
           mkdir "$bundle_dir"
           mv 'dist/TransportERP-UA.app' "$bundle_dir/TransportERP-UA.app"
           printf '%s\n' \
-            'TransportERP-UA v0.2 TEST r8' \
+            'TransportERP-UA v0.2 TEST r8.1' \
             'Business data are stored outside this application bundle.' \
             'Persistent data: ~/Library/Application Support/TransportERP-UA' \
             'This testing build is ad-hoc signed and not notarized.' \
@@ -272,8 +273,8 @@ jobs:
       - name: Upload macOS package
         uses: actions/upload-artifact@v4
         with:
-          name: TransportERP-UA-v0.2-r8-macOS-${{ matrix.arch }}
-          path: TransportERP-UA_v0_2_TEST_r8_macOS_${{ matrix.arch }}_Portable.zip
+          name: TransportERP-UA-v0.2-r8.1-macOS-${{ matrix.arch }}
+          path: TransportERP-UA_v0_2_TEST_r8_1_macOS_${{ matrix.arch }}_Portable.zip
           if-no-files-found: error
           retention-days: 90
 
@@ -284,7 +285,7 @@ jobs:
       - build-macos
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout exact r8 source
+      - name: Checkout exact hotfix source
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -292,7 +293,7 @@ jobs:
       - name: Download verified release assets
         uses: actions/download-artifact@v4
         with:
-          pattern: TransportERP-UA-v0.2-r8-*
+          pattern: TransportERP-UA-v0.2-r8.1-*
           path: release-assets
           merge-multiple: true
 
@@ -300,51 +301,51 @@ jobs:
         shell: bash
         run: |
           mkdir release-upload
-          find release-assets -type f -name 'TransportERP-UA_v0_2_TEST_r8_START.zip' -exec cp '{}' release-upload/ \;
-          find release-assets -type f -name 'TransportERP-UA_v0_2_TEST_r8_Setup_Windows_x64.exe' -exec cp '{}' release-upload/ \;
-          find release-assets -type f -name 'TransportERP-UA_v0_2_TEST_r8_Windows_x64_Portable.zip' -exec cp '{}' release-upload/ \;
-          find release-assets -type f -name 'TransportERP-UA_v0_2_TEST_r8_macOS_arm64_Portable.zip' -exec cp '{}' release-upload/ \;
-          find release-assets -type f -name 'TransportERP-UA_v0_2_TEST_r8_macOS_x86_64_Portable.zip' -exec cp '{}' release-upload/ \;
-          test -f release-upload/TransportERP-UA_v0_2_TEST_r8_START.zip
-          test -f release-upload/TransportERP-UA_v0_2_TEST_r8_Setup_Windows_x64.exe
-          test -f release-upload/TransportERP-UA_v0_2_TEST_r8_Windows_x64_Portable.zip
-          test -f release-upload/TransportERP-UA_v0_2_TEST_r8_macOS_arm64_Portable.zip
-          test -f release-upload/TransportERP-UA_v0_2_TEST_r8_macOS_x86_64_Portable.zip
+          find release-assets -type f -name 'TransportERP-UA_v0_2_TEST_r8_1_START.zip' -exec cp '{}' release-upload/ \;
+          find release-assets -type f -name 'TransportERP-UA_v0_2_TEST_r8_1_Setup_Windows_x64.exe' -exec cp '{}' release-upload/ \;
+          find release-assets -type f -name 'TransportERP-UA_v0_2_TEST_r8_1_Windows_x64_Portable.zip' -exec cp '{}' release-upload/ \;
+          find release-assets -type f -name 'TransportERP-UA_v0_2_TEST_r8_1_macOS_arm64_Portable.zip' -exec cp '{}' release-upload/ \;
+          find release-assets -type f -name 'TransportERP-UA_v0_2_TEST_r8_1_macOS_x86_64_Portable.zip' -exec cp '{}' release-upload/ \;
+          test -f release-upload/TransportERP-UA_v0_2_TEST_r8_1_START.zip
+          test -f release-upload/TransportERP-UA_v0_2_TEST_r8_1_Setup_Windows_x64.exe
+          test -f release-upload/TransportERP-UA_v0_2_TEST_r8_1_Windows_x64_Portable.zip
+          test -f release-upload/TransportERP-UA_v0_2_TEST_r8_1_macOS_arm64_Portable.zip
+          test -f release-upload/TransportERP-UA_v0_2_TEST_r8_1_macOS_x86_64_Portable.zip
           cd release-upload
           sha256sum \
-            TransportERP-UA_v0_2_TEST_r8_START.zip \
-            TransportERP-UA_v0_2_TEST_r8_Setup_Windows_x64.exe \
-            TransportERP-UA_v0_2_TEST_r8_Windows_x64_Portable.zip \
-            TransportERP-UA_v0_2_TEST_r8_macOS_arm64_Portable.zip \
-            TransportERP-UA_v0_2_TEST_r8_macOS_x86_64_Portable.zip \
-            > SHA256SUMS_v0_2_TEST_r8.txt
-          sha256sum -c SHA256SUMS_v0_2_TEST_r8.txt
+            TransportERP-UA_v0_2_TEST_r8_1_START.zip \
+            TransportERP-UA_v0_2_TEST_r8_1_Setup_Windows_x64.exe \
+            TransportERP-UA_v0_2_TEST_r8_1_Windows_x64_Portable.zip \
+            TransportERP-UA_v0_2_TEST_r8_1_macOS_arm64_Portable.zip \
+            TransportERP-UA_v0_2_TEST_r8_1_macOS_x86_64_Portable.zip \
+            > SHA256SUMS_v0_2_TEST_r8_1.txt
+          sha256sum -c SHA256SUMS_v0_2_TEST_r8_1.txt
 
-      - name: Publish v0.2-r8 prerelease
+      - name: Publish v0.2-r8.1 prerelease
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          if gh release view v0.2-r8 >/dev/null 2>&1; then
-            gh release edit v0.2-r8 \
-              --title 'TransportERP-UA v0.2 r8 — executable testing release' \
-              --notes-file RELEASE_NOTES_v0_2_r8.md \
+          if gh release view v0.2-r8.1 >/dev/null 2>&1; then
+            gh release edit v0.2-r8.1 \
+              --title 'TransportERP-UA v0.2 r8.1 — Windows launcher hotfix' \
+              --notes-file RELEASE_NOTES_v0_2_r8_1.md \
               --prerelease
           else
-            gh release create v0.2-r8 \
+            gh release create v0.2-r8.1 \
               --target "$GITHUB_SHA" \
-              --title 'TransportERP-UA v0.2 r8 — executable testing release' \
-              --notes-file RELEASE_NOTES_v0_2_r8.md \
+              --title 'TransportERP-UA v0.2 r8.1 — Windows launcher hotfix' \
+              --notes-file RELEASE_NOTES_v0_2_r8_1.md \
               --prerelease
           fi
-          gh release upload v0.2-r8 release-upload/* --clobber
+          gh release upload v0.2-r8.1 release-upload/* --clobber
 
       - name: Preserve release manifest
         uses: actions/upload-artifact@v4
         with:
-          name: TransportERP-UA-v0.2-r8-release-manifest
+          name: TransportERP-UA-v0.2-r8.1-release-manifest
           path: |
-            release-upload/TransportERP-UA_v0_2_TEST_r8_START.zip
-            release-upload/SHA256SUMS_v0_2_TEST_r8.txt
+            release-upload/TransportERP-UA_v0_2_TEST_r8_1_START.zip
+            release-upload/SHA256SUMS_v0_2_TEST_r8_1.txt
           if-no-files-found: error
           retention-days: 90
