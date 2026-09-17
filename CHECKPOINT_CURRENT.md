@@ -1,20 +1,18 @@
 # TransportERP-UA — CURRENT CHECKPOINT
 
-Date: 2026-09-16
+Date: 2026-09-17
 
-## Current release candidate
+## Current working revision
 
-- Version: **v0.2 TEST r8**.
-- Release branch: `release/v0.2-r8`.
-- Detailed checkpoint: `CHECKPOINT_v0_2_r8.md`.
-- Release tag: `v0.2-r8`.
-- Release type: testing prerelease.
-- Green CI base commit: `c126d2932a416b4d12d0336995e3a6adb4666893`.
-- Verified CI run: `35145861554`.
+- Version: **v0.2 TEST r9**.
+- Working branch: `work/r9-taxo-release-alignment`.
+- Detailed checkpoint: `CHECKPOINT_v0_2_r9.md`.
+- Previous published executable hotfix: `v0.2-r8.1`.
+- Current development launch: `START.bat` / `START_WINDOWS.bat`.
 
 ## Persistent local data
 
-All preview/executable revisions use one persistent data directory outside version folders.
+All START/Portable/Setup revisions use persistent data outside the version folder.
 
 Windows:
 `%LOCALAPPDATA%\TransportERP-UA`
@@ -22,7 +20,7 @@ Windows:
 macOS:
 `~/Library/Application Support/TransportERP-UA`
 
-The SQLite database, documents and backups remain outside START/Portable/Setup packages. Changing program versions must not delete business data.
+SQLite, documents and backups are never bundled into release packages. Changing or uninstalling a program version must not remove business data.
 
 ## Current visible functionality
 
@@ -39,7 +37,7 @@ The SQLite database, documents and backups remain outside START/Portable/Setup p
 - fuel history per vehicle;
 - STOIR plans for maintenance / inspection / OTK / custom work;
 - mileage/date due calculations and warnings;
-- completed technical maintenance/inspection history;
+- completed maintenance/inspection history;
 - technical service screen;
 - defects with severity and blocking flag;
 - repair orders, works, parts, materials, cost, completion and technical close;
@@ -51,19 +49,23 @@ TransportERP-UA owns fleet operations, technical management, STOIR, repairs, doc
 
 Taxo remains the specialized driver-worktime/tachograph subsystem: tachograph cards, driving/rest, Regulation №340 analysis, shift schedules, timesheets and activity confirmation forms.
 
+## r9 release-process alignment
+
+TransportERP now follows the proven Taxo release mechanics rather than keeping a separate GitHub-only build recipe:
+
+- `START.bat` is the stable user-facing Python launch entry point;
+- `BUILD_WINDOWS.bat` builds and verifies the Windows onedir/portable bundle;
+- `BUILD_INSTALLER.bat` builds the Windows Setup EXE;
+- `BUILD_MACOS.sh` builds and verifies native macOS bundles;
+- `TransportERP.spec` and `TransportERP_macos.spec` are canonical PyInstaller recipes;
+- `BUILD_START.sh` creates the versioned START package;
+- `RELEASE_CHECKLIST.md` defines the release sequence;
+- `.github/workflows/publish-control-release.yml` repeats those same repository build recipes instead of inventing a second CI-only build path.
+
 ## Packaging rule
 
-Release packages follow the Taxo format and always have unique versioned names/root folders. Business SQLite databases are never bundled.
+Release packages use the Taxo naming style and always have unique versioned root folders. Business databases are forbidden in release artifacts. Executable control releases are made approximately every 5–10 working revisions or at a meaningful milestone, not on each minor commit.
 
-Current release set:
+## Next functional step
 
-- `TransportERP-UA_v0_2_TEST_r8_START.zip`
-- `TransportERP-UA_v0_2_TEST_r8_Windows_x64_Portable.zip`
-- `TransportERP-UA_v0_2_TEST_r8_Setup_Windows_x64.exe`
-- `TransportERP-UA_v0_2_TEST_r8_macOS_arm64_Portable.zip`
-- `TransportERP-UA_v0_2_TEST_r8_macOS_x86_64_Portable.zip`
-- `SHA256SUMS_v0_2_TEST_r8.txt`
-
-## Known limitation for r8
-
-Blocking defects/repair orders already move a vehicle into `REPAIR`, but final dispatcher release is not yet hard-blocked by that technical blocker. This is explicitly planned for r9.
+Continue the technical-service line: hard-block dispatcher release when a vehicle has an open blocking defect/repair, then expand STOIR documents, scheduled inspections, technical journals and maintenance documentation.
